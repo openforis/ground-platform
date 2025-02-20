@@ -22,24 +22,20 @@ import {
 import {
   DocumentData,
   FieldPath,
-  deleteField,
   serverTimestamp,
 } from '@angular/fire/firestore';
 import {registry} from '@ground/lib/dist/message-registry';
 import {GroundProtos} from '@ground/proto';
 import {getDownloadURL, getStorage, ref} from 'firebase/storage';
 import {List, Map} from 'immutable';
-import {Observable, combineLatest, firstValueFrom, of} from 'rxjs';
-import {filter, find, map, switchMap} from 'rxjs/operators';
+import {Observable, combineLatest, firstValueFrom} from 'rxjs';
+import {map} from 'rxjs/operators';
 
 import {FirebaseDataConverter} from 'app/converters/firebase-data-converter';
 import {loiDocToModel} from 'app/converters/loi-data-converter';
 import {
-  aclToDocument,
-  dataSharingTermsToDocument,
   jobToDocument,
-  newSurveyToDocument,
-  partialSurveyToDocument,
+  surveyToDocument,
 } from 'app/converters/proto-model-converter';
 import {submissionDocToModel} from 'app/converters/submission-data-converter';
 import {
@@ -50,11 +46,12 @@ import {Job} from 'app/models/job.model';
 import {LocationOfInterest} from 'app/models/loi.model';
 import {Role} from 'app/models/role.model';
 import {Submission} from 'app/models/submission/submission.model';
-import {DataSharingType, Survey} from 'app/models/survey.model';
+import {DataSharingType, Survey, SurveyState} from 'app/models/survey.model';
 import {Task} from 'app/models/task/task.model';
 import {User} from 'app/models/user.model';
 
 import Pb = GroundProtos.ground.v1beta1;
+
 const l = registry.getFieldIds(Pb.LocationOfInterest);
 const s = registry.getFieldIds(Pb.Survey);
 const sb = registry.getFieldIds(Pb.Submission);
@@ -141,10 +138,6 @@ export class DataStoreService {
           AclRole.VIEWER,
           AclRole.DATA_COLLECTOR,
           AclRole.SURVEY_ORGANIZER,
-          Role.OWNER,
-          Role.SURVEY_ORGANIZER,
-          Role.DATA_COLLECTOR,
-          Role.VIEWER,
         ])
       )
       .snapshotChanges()
@@ -174,100 +167,71 @@ export class DataStoreService {
    * @param jobIdsToDelete List of job ids to delete. This is used to delete all the lois and
    *  submissions that are related to the jobs to be deleted.
    */
-
   async updateSurvey(
     survey: Survey,
-    jobIdsToDelete: List<string>
+    jobIdsToDelete?: List<string>
   ): Promise<void> {
-    const {title, description, id: surveyId, jobs} = survey;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const surveyJS: {[key: string]: any} = {
-      title: title,
-      description: description,
-    };
-    jobs.forEach(job => {
-      const {id: jobId} = job;
-      if (jobIdsToDelete.includes(jobId)) {
-        this.deleteAllLocationsOfInterestInJob(surveyId, jobId);
-        this.deleteAllSubmissionsInJob(surveyId, jobId);
-        surveyJS[`jobs.${jobId}`] = deleteField();
-      } else {
-        surveyJS[`jobs.${jobId}`] = FirebaseDataConverter.jobToJS(job);
-      }
-    });
+    const {id: surveyId, jobs} = survey;
+
+    jobIdsToDelete?.forEach(jobId => this.deleteJob(surveyId, jobId));
+
+    await Promise.all(
+      jobs
+        .filter(({id}) => !jobIdsToDelete?.includes(id))
+        .map(job => this.addOrUpdateJob(surveyId, job))
+    );
+
     await this.db.firestore
       .collection(SURVEYS_COLLECTION_NAME)
       .doc(surveyId)
-      .update({
-        ...surveyJS,
-        ...partialSurveyToDocument(title, description),
-      });
-
-    await Promise.all(jobs.map(job => this.updateJob(surveyId, job)));
+      .update(surveyToDocument(surveyId, survey));
   }
 
   /**
    * Updates the survey with new name.
    *
    * @param surveyId the id of the survey.
-   * @param newName the new name of the survey.
+   * @param name the new name of the survey.
    */
-  updateSurveyTitle(surveyId: string, newName: string): Promise<void> {
+  updateSurveyTitle(surveyId: string, name: string): Promise<void> {
     return this.db
       .collection(SURVEYS_COLLECTION_NAME)
       .doc(surveyId)
-      .set(
-        {title: newName, ...partialSurveyToDocument(newName)},
-        {merge: true}
-      );
+      .set(surveyToDocument(surveyId, {title: name}), {merge: true});
   }
 
   /**
    * Updates the survey with new name and new description.
    *
    * @param surveyId the id of the survey.
-   * @param newName the new name of the survey.
-   * @param newDescription the new description of the survey.
+   * @param name the new name of the survey.
+   * @param description the new description of the survey.
    */
   updateSurveyTitleAndDescription(
     surveyId: string,
-    newName: string,
-    newDescription: string
+    name: string,
+    description: string
   ): Promise<void> {
     return this.db
       .collection(SURVEYS_COLLECTION_NAME)
       .doc(surveyId)
-      .set(
-        {
-          title: newName,
-          description: newDescription,
-          ...partialSurveyToDocument(newName, newDescription),
-        },
-        {merge: true}
-      );
+      .set(surveyToDocument(surveyId, {title: name, description}), {
+        merge: true,
+      });
   }
 
-  addOrUpdateJob(surveyId: string, job: Job): Promise<[void, void]> {
-    return Promise.all([
-      this.db
-        .collection(SURVEYS_COLLECTION_NAME)
-        .doc(surveyId)
-        .update({
-          [`jobs.${job.id}`]: FirebaseDataConverter.jobToJS(job),
-        }),
-      this.updateJob(surveyId, job),
-    ]);
+  addOrUpdateSurvey(survey: Survey): Promise<void> {
+    return this.db
+      .collection(SURVEYS_COLLECTION_NAME)
+      .doc(survey.id)
+      .set(surveyToDocument(survey.id, survey));
   }
 
-  updateJob(
-    surveyId: string,
-    job: Job,
-    tasks: List<Task> | null = null
-  ): Promise<void> {
+  addOrUpdateJob(surveyId: string, job: Job): Promise<void> {
     return this.db
       .collection(`${SURVEYS_COLLECTION_NAME}/${surveyId}/jobs`)
       .doc(job.id)
-      .set(jobToDocument(job, tasks));
+      .set(jobToDocument(job));
   }
 
   async deleteSurvey(survey: Survey) {
@@ -285,17 +249,15 @@ export class DataStoreService {
     await this.deleteAllLocationsOfInterestInJob(surveyId, jobId);
     await this.deleteAllSubmissionsInJob(surveyId, jobId);
     return await this.db
-      .collection(SURVEYS_COLLECTION_NAME)
-      .doc(surveyId)
-      .update({
-        [`jobs.${jobId}`]: deleteField(),
-      });
+      .collection(`${SURVEYS_COLLECTION_NAME}/${surveyId}/jobs`)
+      .doc(jobId)
+      .delete();
   }
 
   private async deleteAllSubmissionsInJob(surveyId: string, jobId: string) {
     const submissions = this.db.collection(
       `${SURVEYS_COLLECTION_NAME}/${surveyId}/submissions`,
-      ref => ref.where(s.jobId, '==', jobId)
+      ref => ref.where(sb.jobId, '==', jobId)
     );
     const querySnapshot = await firstValueFrom(submissions.get());
     return await Promise.all(querySnapshot.docs.map(doc => doc.ref.delete()));
@@ -317,11 +279,11 @@ export class DataStoreService {
     surveyId: string,
     jobId: string
   ) {
-    const loisInJob = this.db.collection(
+    const lois = this.db.collection(
       `${SURVEYS_COLLECTION_NAME}/${surveyId}/lois`,
       ref => ref.where(l.jobId, '==', jobId)
     );
-    const querySnapshot = await firstValueFrom(loisInJob.get());
+    const querySnapshot = await firstValueFrom(lois.get());
     return await Promise.all(querySnapshot.docs.map(doc => doc.ref.delete()));
   }
 
@@ -402,7 +364,7 @@ export class DataStoreService {
       ref => ref.where(l.source, '==', Source.IMPORTED)
     );
 
-    const fieldData = this.db.collection(
+    const fieldDataLois = this.db.collection(
       `${SURVEYS_COLLECTION_NAME}/${surveyId}/lois`,
       ref =>
         ref
@@ -412,10 +374,10 @@ export class DataStoreService {
 
     return combineLatest([
       importedLois.valueChanges({idField: 'id'}),
-      fieldData.valueChanges({idField: 'id'}),
+      fieldDataLois.valueChanges({idField: 'id'}),
     ]).pipe(
-      map(([predefinedLois, fieldData]) =>
-        this.toLocationsOfInterest(predefinedLois.concat(fieldData))
+      map(([predefinedLois, fieldDataLois]) =>
+        this.toLocationsOfInterest(predefinedLois.concat(fieldDataLois))
       )
     );
   }
@@ -485,40 +447,6 @@ export class DataStoreService {
     );
   }
 
-  /**
-   * Adds or overwrites the role of the specified user in the survey with the
-   * specified id.
-   * @param surveyId the id of the survey to be updated.
-   * @param email the email of the user whose role is to be updated.
-   * @param role the new role of the specified user.
-   */
-  updateAcl(surveyId: string, acl: Map<string, Role>): Promise<void> {
-    return this.db
-      .collection(SURVEYS_COLLECTION_NAME)
-      .doc(surveyId)
-      .update({acl: FirebaseDataConverter.aclToJs(acl), ...aclToDocument(acl)});
-  }
-
-  /**
-   * Adds or overwrites the dataSharingTerms in the survey of the specified id.
-   * @param surveyId the id of the survey to be updated.
-   * @param type the type of the DataSharingTerms.
-   * @param customText the text of the DataSharingTerms.
-   */
-  updateDataSharingTerms(
-    surveyId: string,
-    type: DataSharingType,
-    customText?: string
-  ): Promise<void> {
-    return this.db
-      .collection(SURVEYS_COLLECTION_NAME)
-      .doc(surveyId)
-      .update({
-        dataSharingTerms: {type, customText},
-        ...dataSharingTermsToDocument(type, customText),
-      });
-  }
-
   generateId() {
     return this.db.collection('ids').ref.doc().id;
   }
@@ -543,10 +471,15 @@ export class DataStoreService {
     await this.db
       .collection(SURVEYS_COLLECTION_NAME)
       .doc(surveyId)
-      .set({
-        ...FirebaseDataConverter.newSurveyToJS(name, description, acl),
-        ...newSurveyToDocument(name, description, acl, ownerId),
-      });
+      .set(
+        surveyToDocument(surveyId, {
+          title: name,
+          description,
+          acl,
+          ownerId,
+          state: SurveyState.DRAFT,
+        })
+      );
     return Promise.resolve(surveyId);
   }
 
@@ -559,24 +492,15 @@ export class DataStoreService {
     return tos.get('text');
   }
 
-  addOrUpdateTasks(
-    surveyId: string,
-    job: Job,
-    tasks: List<Task>
-  ): Promise<[void, void]> {
-    return Promise.all([
-      this.db
-        .collection(SURVEYS_COLLECTION_NAME)
-        .doc(surveyId)
-        .update({
-          [`jobs.${job.id}.tasks`]: {
-            ...FirebaseDataConverter.tasksToJS(
-              this.convertTasksListToMap(tasks)
-            ),
-          },
-        }),
-      this.updateJob(surveyId, job, tasks),
-    ]);
+  async getAccessDeniedMessage(): Promise<{message?: string; link?: string}> {
+    const accessDeniedMessage = await this.db
+      .collection('config')
+      .doc('accessDenied')
+      .ref.get();
+    return {
+      message: accessDeniedMessage.get('message'),
+      link: accessDeniedMessage.get('link'),
+    };
   }
 
   /**
@@ -611,8 +535,8 @@ export class DataStoreService {
     userId: string,
     canManageSurvey: boolean
   ) {
-    return canManageSurvey
-      ? ref.where(sb.loiId, '==', loiId)
-      : ref.where(sb.loiId, '==', loiId).where(sb.ownerId, '==', userId);
+    const query = ref.where(sb.loiId, '==', loiId);
+
+    return canManageSurvey ? query : query.where(sb.ownerId, '==', userId);
   }
 }

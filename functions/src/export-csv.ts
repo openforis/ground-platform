@@ -16,23 +16,18 @@
 
 import * as functions from 'firebase-functions';
 import * as csv from '@fast-csv/format';
-import {canExport} from './common/auth';
+import {canExport, canImport} from './common/auth';
 import {geojsonToWKT} from '@terraformer/wkt';
 import {getDatastore} from './common/context';
 import * as HttpStatus from 'http-status-codes';
 import {DecodedIdToken} from 'firebase-admin/auth';
 import {List} from 'immutable';
-import {DocumentData, QuerySnapshot} from 'firebase-admin/firestore';
-import {registry, toMessage} from '@ground/lib';
+import {QuerySnapshot} from 'firebase-admin/firestore';
+import {timestampToInt, toMessage} from '@ground/lib';
 import {GroundProtos} from '@ground/proto';
 import {toGeoJsonGeometry} from '@ground/lib';
 
 import Pb = GroundProtos.ground.v1beta1;
-const sb = registry.getFieldIds(Pb.Submission);
-const l = registry.getFieldIds(Pb.LocationOfInterest);
-
-/** A dictionary of submissions values (array) keyed by loi ID. */
-type SubmissionDict = {[key: string]: any[]};
 
 /**
  * Iterates over all LOIs and submissions in a job, joining them
@@ -44,6 +39,7 @@ export async function exportCsvHandler(
   user: DecodedIdToken
 ) {
   const db = getDatastore();
+  const {uid: userId} = user;
   const surveyId = req.query.survey as string;
   const jobId = req.query.job as string;
   const surveyDoc = await db.fetchSurvey(surveyId);
@@ -55,7 +51,7 @@ export async function exportCsvHandler(
     res.status(HttpStatus.FORBIDDEN).send('Permission denied');
     return;
   }
-  console.log(`Exporting survey '${surveyId}', job '${jobId}'`);
+  const ownerId = canImport(user, surveyDoc) ? undefined : userId;
 
   const jobDoc = await db.fetchJob(surveyId, jobId);
   if (!jobDoc.exists || !jobDoc.data()) {
@@ -69,16 +65,18 @@ export async function exportCsvHandler(
       .send('Unsupported or corrupt job');
     return;
   }
-  const jobName = job.name;
-  const loiDocs = await db.fetchLocationsOfInterestByJobId(surveyId, jobId);
-  const loiProperties = getPropertyNames(loiDocs);
-  const headers = getHeaders(job.tasks, loiProperties);
+  const {name: jobName} = job;
+  const tasks = job.tasks.sort((a, b) => a.index! - b.index!);
+  const snapshot = await db.fetchLocationsOfInterest(surveyId, jobId);
+  const loiProperties = createProperySetFromSnapshot(snapshot);
+  const headers = getHeaders(tasks, loiProperties);
 
   res.type('text/csv');
   res.setHeader(
     'Content-Disposition',
     'attachment; filename=' + getFileName(jobName)
   );
+
   const csvStream = csv.format({
     delimiter: ',',
     headers,
@@ -88,78 +86,41 @@ export async function exportCsvHandler(
   });
   csvStream.pipe(res);
 
-  const submissionsByLoi = await getSubmissionsByLoi(surveyId, jobId);
+  const rows = await db.fetchLoisSubmissions(surveyId, jobId, ownerId, 50);
 
-  loiDocs.forEach(loiDoc => {
-    const loi = toMessage(loiDoc.data(), Pb.LocationOfInterest);
-    if (loi instanceof Error) {
-      throw loi;
+  for await (const row of rows) {
+    try {
+      const [loiDoc, submissionDoc] = row;
+      const loi = toMessage(loiDoc.data(), Pb.LocationOfInterest);
+      if (loi instanceof Error) throw loi;
+      if (isAccessibleLoi(loi, ownerId) && submissionDoc) {
+        const submission = toMessage(submissionDoc.data(), Pb.Submission);
+        if (submission instanceof Error) throw submission;
+        writeRow(csvStream, loiProperties, tasks, loi, submission);
+      } else {
+        writeRow(csvStream, loiProperties, tasks, loi);
+      }
+    } catch (e) {
+      console.debug('Skipping row', e);
     }
-    // Submissions to be joined with the current LOI, resulting in one row
-    // per submission. For LOIs with no submissions, a single empty submission
-    // is added to ensure the LOI is represented in the output as a row with
-    // LOI fields, but no submission data.
-    const submissions = submissionsByLoi[loiDoc.id] || [{}];
-    submissions.forEach(submissionDict =>
-      writeSubmissions(csvStream, loiProperties, job.tasks, loi, submissionDict)
-    );
-  });
+  }
+
   res.status(HttpStatus.OK);
   csvStream.end();
 }
 
-function writeSubmissions(
-  csvStream: csv.CsvFormatterStream<csv.Row, csv.Row>,
-  loiProperties: Set<string>,
-  tasks: Pb.ITask[],
-  loi: Pb.LocationOfInterest,
-  submissionDict: SubmissionDict
-) {
-  try {
-    const submission = toMessage(submissionDict, Pb.Submission);
-    if (submission instanceof Error) {
-      throw submission;
-    }
-    writeRow(csvStream, loiProperties, tasks, loi, submission);
-  } catch (e) {
-    console.debug('Skipping row', e);
-  }
-}
-
 function getHeaders(tasks: Pb.ITask[], loiProperties: Set<string>): string[] {
-  const headers = [];
-  headers.push('system:index');
-  headers.push('geometry');
-  headers.push(...loiProperties);
-  // TODO(#1936): Use `index` field to export columns in correct order.
-  tasks.forEach(task => headers.push('data:' + (task.prompt || '')));
-  headers.push('data:contributor_name');
-  headers.push('data:contributor_email');
+  const headers = [
+    'system:index',
+    'geometry',
+    ...loiProperties,
+    ...tasks.map(task => `data:${task.prompt || ''}`),
+    'data:contributor_name',
+    'data:contributor_email',
+    'data:created_client_timestamp',
+    'data:created_server_timestamp',
+  ];
   return headers.map(quote);
-}
-
-/**
- * Returns all submissions in the specified job, indexed by LOI ID.
- * Note: Indexes submissions by LOI id in memory. This consumes more
- * memory than iterating over and streaming both LOI and submission
- * collections simultaneously, but it's easier to read and maintain. This
- * function will need to be optimized to scale to larger datasets than
- * can fit in memory.
- */
-async function getSubmissionsByLoi(
-  surveyId: string,
-  jobId: string
-): Promise<SubmissionDict> {
-  const db = getDatastore();
-  const submissions = await db.fetchSubmissionsByJobId(surveyId, jobId);
-  const submissionsByLoi: {[name: string]: any[]} = {};
-  submissions.forEach(submission => {
-    const loiId = submission.get(sb.loiId) as string;
-    const arr: any[] = submissionsByLoi[loiId] || [];
-    arr.push(submission.data());
-    submissionsByLoi[loiId] = arr;
-  });
-  return submissionsByLoi;
 }
 
 function writeRow(
@@ -167,25 +128,36 @@ function writeRow(
   loiProperties: Set<string>,
   tasks: Pb.ITask[],
   loi: Pb.LocationOfInterest,
-  submission: Pb.Submission
+  submission?: Pb.Submission
 ) {
-  const row = [];
-  // Header: system:index
-  row.push(quote(loi.customTag));
-  // Header: geometry
   if (!loi.geometry) {
     console.debug(`Skipping LOI ${loi.id} - missing geometry`);
     return;
   }
+  const row = [];
+  // Header: system:index
+  row.push(quote(loi.customTag));
+  // Header: geometry
   row.push(quote(toWkt(loi.geometry)));
   // Header: One column for each loi property (merged over all properties across all LOIs)
   getPropertiesByName(loi, loiProperties).forEach(v => row.push(quote(v)));
-  const data = submission.taskData;
-  // Header: One column for each task
-  tasks.forEach(task => row.push(quote(getValue(task, data))));
-  // Header: contributor_username, contributor_email
-  row.push(quote(submission.created?.displayName));
-  row.push(quote(submission.created?.emailAddress));
+  if (submission) {
+    const {taskData: data} = submission;
+    // Header: One column for each task
+    tasks.forEach(task => row.push(quote(getValue(task, data))));
+    // Header: contributor_username, contributor_email, created_client_timestamp, created_server_timestamp
+    const {created} = submission;
+    row.push(quote(created?.displayName));
+    row.push(quote(created?.emailAddress));
+    row.push(
+      quote(new Date(timestampToInt(created?.clientTimestamp)).toISOString())
+    );
+    row.push(
+      quote(new Date(timestampToInt(created?.serverTimestamp)).toISOString())
+    );
+  } else {
+    row.concat(new Array(tasks.length + 4).fill(''));
+  }
   csvStream.write(row);
 }
 
@@ -205,6 +177,14 @@ function toWkt(geometry: Pb.IGeometry): string {
 }
 
 /**
+ * Checks if a Location of Interest (LOI) is accessible to a given user.
+ */
+function isAccessibleLoi(loi: Pb.ILocationOfInterest, ownerId?: string) {
+  const isFieldData = loi.source === Pb.LocationOfInterest.Source.FIELD_DATA;
+  return ownerId ? isFieldData && loi.ownerId === ownerId : true;
+}
+
+/**
  * Returns the string or number representation of a specific task element result.
  */
 function getValue(
@@ -212,38 +192,35 @@ function getValue(
   data: Pb.ITaskData[]
 ): string | number | null {
   const result = data.find(d => d.taskId === task.id);
-  if (!result) {
-    return null;
-  }
-  if (result.textResponse) {
-    return result.textResponse.text ?? null;
-  } else if (result.numberResponse) {
-    return getNumberValue(result.numberResponse);
-  } else if (result.dateTimeResponse) {
-    return getDateTimeValue(result.dateTimeResponse);
-  } else if (result.multipleChoiceResponses) {
-    return getMultipleChoiceValues(task, result.multipleChoiceResponses);
-  } else if (result.captureLocationResult) {
+  if (!result || result.skipped) return null;
+  const {
+    textResponse,
+    numberResponse,
+    dateTimeResponse,
+    multipleChoiceResponses,
+    drawGeometryResult,
+    captureLocationResult,
+    takePhotoResult,
+  } = result;
+  if (textResponse) return textResponse.text ?? null;
+  else if (numberResponse) return numberResponse.number ?? null;
+  else if (dateTimeResponse) return getDateTimeValue(dateTimeResponse);
+  else if (multipleChoiceResponses)
+    return getMultipleChoiceValues(task, multipleChoiceResponses);
+  else if (drawGeometryResult?.geometry) {
+    // TODO(#1248): Test when implementing other plot annotations feature.
+    return toWkt(drawGeometryResult.geometry);
+  } else if (captureLocationResult) {
     // TODO(#1916): Include altitude and accuracy in separate columns.
     return toWkt(
       new Pb.Geometry({
         point: new Pb.Point({
-          coordinates: result.captureLocationResult.coordinates,
+          coordinates: captureLocationResult.coordinates,
         }),
       })
     );
-  } else if (result.drawGeometryResult?.geometry) {
-    // TODO(#1248): Test when implementing other plot annotations feature.
-    return toWkt(result.drawGeometryResult.geometry);
-  } else if (result.takePhotoResult) {
-    return getPhotoUrlValue(result.takePhotoResult);
-  } else {
-    return null;
-  }
-}
-
-function getNumberValue(response: Pb.TaskData.INumberResponse): number | null {
-  return response.number ?? null;
+  } else if (takePhotoResult) return getPhotoUrlValue(takePhotoResult);
+  else return null;
 }
 
 function getDateTimeValue(
@@ -268,8 +245,15 @@ function getMultipleChoiceValues(
     responses.selectedOptionIds?.map(
       id => getMultipleChoiceLabel(task, id) || '#ERR'
     ) || [];
-  if (responses.otherText && responses.otherText.trim() !== '')
-    values.push(responses.otherText);
+  // Temporary workaround: Ensure at least one value is present: if no values are selected and 'otherText' is empty, add 'Other' as a fallback.
+  // https://github.com/google/ground-android/issues/2846
+  if (values.length === 0 && !responses.otherText) values.push('Other');
+  if (responses.otherText)
+    values.push(
+      responses.otherText.trim() !== ''
+        ? `Other: ${responses.otherText}`
+        : 'Other'
+    );
   return values.join(',');
 }
 
@@ -293,10 +277,21 @@ function getFileName(jobName: string | null) {
   return `${fileBase}.csv`;
 }
 
-function getPropertyNames(lois: QuerySnapshot<DocumentData>): Set<string> {
-  return new Set(
-    lois.docs.flatMap(loi => Object.keys(loi.get(l.properties) || {}))
-  );
+function createProperySetFromSnapshot(
+  snapshot: QuerySnapshot,
+  ownerId?: string
+): Set<string> {
+  const allKeys = new Set<string>();
+  snapshot.forEach(doc => {
+    const loi = toMessage(doc.data(), Pb.LocationOfInterest);
+    if (loi instanceof Error) return;
+    if (!isAccessibleLoi(loi, ownerId)) return;
+    const properties = loi.properties;
+    for (const key of Object.keys(properties || {})) {
+      allKeys.add(key);
+    }
+  });
+  return allKeys;
 }
 
 function getPropertiesByName(

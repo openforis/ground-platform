@@ -63,14 +63,8 @@ describe('MainPageComponent', () => {
       'getSelectedSubmission$',
     ]);
 
-    // No submission selected initially
-    submissionService.getSelectedSubmission$.and.returnValue(
-      of(LoadingState.LOADING)
-    );
-
     const navigationService = {
       getSurveyId$: () => NEVER,
-      getJobId$: () => NEVER,
       getLocationOfInterestId$: () => NEVER,
       getSubmissionId$: () => NEVER,
     };

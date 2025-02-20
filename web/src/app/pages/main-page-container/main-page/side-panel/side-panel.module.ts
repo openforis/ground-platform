@@ -22,22 +22,18 @@ import {MatIconModule} from '@angular/material/icon';
 import {BrowserModule} from '@angular/platform-browser';
 
 import {JobListModule} from './job-list/job-list.module';
-import {LocationOfInterestListModule} from './loi-list/loi-list.module';
-import {LocationOfInterestPanelModule} from './loi-panel/loi-panel.module';
 import {SidePanelComponent} from './side-panel.component';
 import {SubmissionFormModule} from './submission-form/submission-form.module';
 
 @NgModule({
   imports: [
     BrowserModule,
-    LocationOfInterestPanelModule,
     MatButtonModule,
     MatCardModule,
     MatDividerModule,
     MatIconModule,
     JobListModule,
     SubmissionFormModule,
-    LocationOfInterestListModule,
   ],
   exports: [SidePanelComponent],
   declarations: [SidePanelComponent],

@@ -16,10 +16,10 @@
 
 import {Component, OnInit} from '@angular/core';
 import {MatDialog} from '@angular/material/dialog';
-import {Observable, Subscription} from 'rxjs';
+import {Observable, Subscription, combineLatest} from 'rxjs';
 import {take} from 'rxjs/operators';
 
-import {Survey} from 'app/models/survey.model';
+import {Survey, SurveyState} from 'app/models/survey.model';
 import {AuthService} from 'app/services/auth/auth.service';
 import {LocationOfInterestService} from 'app/services/loi/loi.service';
 import {NavigationService} from 'app/services/navigation/navigation.service';
@@ -65,23 +65,16 @@ export class MainPageComponent implements OnInit {
           id => id === NavigationService.JOB_ID_NEW && this.showTitleDialog()
         )
     );
-    // Show job dialog when non-null job id set in URL.
-    this.subscription.add(
-      this.navigationService
-        .getJobId$()
-        .subscribe(id => id && this.showEditJobDialog(id))
-    );
     // Show loi details when non-null LOI id set in URL.
+    // Show submission details when submission id set in URL.
     this.subscription.add(
-      this.navigationService
-        .getLocationOfInterestId$()
-        .subscribe(id => id && this.loadLocationOfInterestDetails(id))
-    );
-    // Show/hide submission when submission id set in URL.
-    this.subscription.add(
-      this.navigationService
-        .getSubmissionId$()
-        .subscribe(id => this.editSubmission(id))
+      combineLatest([
+        this.navigationService.getLocationOfInterestId$(),
+        this.navigationService.getSubmissionId$(),
+      ]).subscribe(([loiId, submissionId]) => {
+        if (loiId) this.loadLocationOfInterestDetails(loiId);
+        if (submissionId) this.loadSubmissionDetails(submissionId);
+      })
     );
     // Redirect to sign in page if user is not authenticated.
     this.subscription.add(
@@ -104,31 +97,11 @@ export class MainPageComponent implements OnInit {
     });
   }
 
-  private showEditJobDialog(jobId: string) {
-    this.activeSurvey$.pipe(take(1)).subscribe(survey =>
-      this.dialog.open(JobDialogComponent, {
-        autoFocus: jobId === NavigationService.JOB_ID_NEW,
-        data: {
-          surveyId: survey.isUnsavedNew()
-            ? NavigationService.SURVEY_ID_NEW
-            : survey.id,
-          createJob: jobId === NavigationService.SURVEY_ID_NEW,
-          job: survey.jobs?.get(jobId),
-        },
-        panelClass: 'job-dialog-container',
-      })
-    );
-  }
-
   private loadLocationOfInterestDetails(loiId: string) {
     this.loiService.selectLocationOfInterest(loiId);
   }
 
-  private editSubmission(submissionId: string | null) {
-    if (submissionId) {
-      this.submissionService.selectSubmission(submissionId);
-    } else {
-      this.submissionService.deselectSubmission();
-    }
+  private loadSubmissionDetails(submissionId: string) {
+    this.submissionService.selectSubmission(submissionId);
   }
 }

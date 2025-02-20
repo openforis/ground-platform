@@ -40,7 +40,9 @@ export class SubmissionPanelComponent implements OnInit, OnDestroy {
   submission: Submission | null = null;
   tasks?: List<Task>;
   selectedTaskId: string | null = null;
+  surveyId: string | null = null;
   firebaseURLs = new Map<string, string>();
+  isLoading = true;
 
   public taskType = TaskType;
 
@@ -51,7 +53,11 @@ export class SubmissionPanelComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit() {
-    this.submissionService.selectSubmission(this.submissionId);
+    this.subscription.add(
+      this.navigationService.getSurveyId$().subscribe(surveyId => {
+        this.surveyId = surveyId;
+      })
+    );
     this.subscription.add(
       this.submissionService.getSelectedSubmission$().subscribe(submission => {
         if (submission instanceof Submission) {
@@ -61,6 +67,7 @@ export class SubmissionPanelComponent implements OnInit, OnDestroy {
             .filter(task => !task.addLoiTask);
           // Get image URL upon initialization to not send Firebase requests multiple times
           this.getFirebaseImageURLs();
+          this.isLoading = false;
         }
       })
     );
@@ -91,23 +98,70 @@ export class SubmissionPanelComponent implements OnInit, OnDestroy {
   }
 
   navigateToSubmissionList() {
-    this.navigationService.selectLocationOfInterest(this.submission!.loiId);
+    this.navigationService.selectLocationOfInterest(
+      this.surveyId!,
+      this.submission!.loiId
+    );
   }
 
   getTaskSubmissionResult({id: taskId}: Task): Result | undefined {
     return this.submission?.data.get(taskId);
   }
 
+  getMultipleChoiceOption(task: Task, optionId: string) {
+    return task.multipleChoice?.options.find(({id}: Option) => id === optionId);
+  }
+
   getTaskMultipleChoiceSelections(task: Task): MultipleSelection {
     return this.getTaskSubmissionResult(task)!.value as MultipleSelection;
   }
 
+  getTaskMultipleChoiceOtherValue(task: Task): string | null {
+    const multipleSelection = this.getTaskSubmissionResult(task)!
+      .value as MultipleSelection;
+    // Temporary workaround: Ensure at least one value is present: if no values are selected and 'otherText' is empty, add 'Other' as a fallback.
+    // https://github.com/google/ground-android/issues/2846
+    if (multipleSelection.values.size === 0 && !multipleSelection.otherValue)
+      return 'Other';
+    if (multipleSelection.otherValue)
+      return multipleSelection.otherValue.trim() !== ''
+        ? `Other: ${multipleSelection.otherValue}`
+        : 'Other';
+    return null;
+  }
+
   getCaptureLocationCoord(task: Task): string {
     // x represents longitude, y represents latitude
-    const {x, y} = (this.getTaskSubmissionResult(task)!.value as Point).coord;
-    const long = Math.abs(x).toString() + (x > 0 ? '° E' : '° W');
+    const {coord, accuracy, altitude} = this.getTaskSubmissionResult(task)!
+      .value as Point;
+    const {x, y} = coord;
+    const lng = Math.abs(x).toString() + (x > 0 ? '° E' : '° W');
     const lat = Math.abs(y).toString() + (y > 0 ? '° N' : '° S');
-    return lat + ', ' + long;
+    const result = [`${lat}, ${lng}`];
+    if (altitude) result.push(`Altitude: ${altitude}m`);
+    if (accuracy) result.push(`Accuracy: ${accuracy}m`);
+    return result.join('\n');
+  }
+
+  getDate(task: Task): string {
+    return (
+      this.getTaskSubmissionResult(task)?.value as Date
+    ).toLocaleDateString();
+  }
+
+  getTime(task: Task): string {
+    return (
+      this.getTaskSubmissionResult(task)?.value as Date
+    ).toLocaleTimeString([], {hour: 'numeric', minute: 'numeric'});
+  }
+
+  selectGeometry(task: Task): void {
+    this.navigationService.showSubmissionDetailWithHighlightedTask(
+      this.surveyId!,
+      this.submission!.loiId!,
+      this.submission!.id!,
+      task.id
+    );
   }
 
   ngOnDestroy(): void {

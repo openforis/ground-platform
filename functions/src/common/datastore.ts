@@ -16,11 +16,13 @@
 
 import * as functions from 'firebase-functions';
 import {firestore} from 'firebase-admin';
-import {DocumentData, GeoPoint, QuerySnapshot} from 'firebase-admin/firestore';
+import {DocumentData, GeoPoint} from 'firebase-admin/firestore';
 import {registry} from '@ground/lib';
 import {GroundProtos} from '@ground/proto';
 
 import Pb = GroundProtos.ground.v1beta1;
+import {leftOuterJoinSorted, QueryIterator} from './query-iterator';
+
 const l = registry.getFieldIds(Pb.LocationOfInterest);
 const sb = registry.getFieldIds(Pb.Submission);
 
@@ -38,9 +40,19 @@ type pseudoGeoJsonGeometry = {
 export const config = () => 'config';
 
 /**
+ * Returns the path of passlist entry doc with the specified id.
+ */
+export const passlistEntry = (entryId: string) => `passlist/${entryId}`;
+
+/**
  * Returns the path of integrations doc.
  */
 export const integrations = () => config() + '/integrations';
+
+/**
+ * Returns the path of mail doc.
+ */
+export const mail = () => config() + '/mail';
 
 /**
  * Returns path to survey colection. This is a function for consistency with other path functions.
@@ -80,6 +92,12 @@ export const submissions = (surveyId: string) =>
  */
 export const submission = (surveyId: string, submissionId: string) =>
   submissions(surveyId) + '/' + submissionId;
+
+/**
+ * Returns the path of template doc with the specified id.
+ */
+export const mailTemplate = (templateId: string) =>
+  `${mail()}/templates/${templateId}`;
 
 export class Datastore {
   private db_: firestore.Firestore;
@@ -124,6 +142,10 @@ export class Datastore {
     return this.db_.collection(integrations() + '/propertyGenerators').get();
   }
 
+  fetchMailConfig() {
+    return this.fetchDoc_(mail());
+  }
+
   fetchSurvey(surveyId: string) {
     return this.db_.doc(survey(surveyId)).get();
   }
@@ -132,29 +154,63 @@ export class Datastore {
     return this.db_.doc(job(surveyId, jobId)).get();
   }
 
-  fetchSubmissionsByJobId(surveyId: string, jobId: string) {
-    return this.db_
-      .collection(submissions(surveyId))
-      .where(sb.jobId, '==', jobId)
-      .get();
-  }
-
   fetchLocationOfInterest(surveyId: string, loiId: string) {
     return this.fetchDoc_(loi(surveyId, loiId));
   }
 
-  fetchLocationsOfInterestByJobId(
-    surveyId: string,
-    jobId: string
-  ): Promise<QuerySnapshot<DocumentData, DocumentData>> {
+  fetchLocationsOfInterest(surveyId: string, jobId: string) {
     return this.db_
       .collection(lois(surveyId))
       .where(l.jobId, '==', jobId)
       .get();
   }
 
+  fetchMailTemplate(templateId: string) {
+    return this.fetchDoc_(mailTemplate(templateId));
+  }
+
   fetchSheetsConfig(surveyId: string) {
     return this.fetchDoc_(`${survey(surveyId)}/sheets/config`);
+  }
+
+  /**
+   * Fetches Location of Interests (LOIs) and their associated submissions for a given survey and job.
+   *
+   * @param surveyId The ID of the survey.
+   * @param jobId The ID of the job.
+   * @param ownerId The optional ID of the owner to filter submissions by.
+   * @param page The page number for pagination (used with the `QueryIterator`).
+   * @returns A Promise that resolves to an array of joined LOI and submission documents.
+   */
+  async fetchLoisSubmissions(
+    surveyId: string,
+    jobId: string,
+    ownerId: string | undefined,
+    page: number
+  ) {
+    const loisQuery = this.db_
+      .collection(lois(surveyId))
+      .where(l.jobId, '==', jobId)
+      .orderBy(l.id);
+    let submissionsQuery = this.db_
+      .collection(submissions(surveyId))
+      .where(sb.jobId, '==', jobId)
+      .orderBy(sb.loiId);
+    if (ownerId) {
+      submissionsQuery = submissionsQuery.where(sb.ownerId, '==', ownerId);
+    }
+    const loisIterator = new QueryIterator(loisQuery, page, l.id);
+    const submissionsIterator = new QueryIterator(
+      submissionsQuery,
+      page,
+      sb.loiId
+    );
+    return leftOuterJoinSorted(
+      loisIterator,
+      loiDoc => loiDoc.get(l.id),
+      submissionsIterator,
+      submissionDoc => submissionDoc.get(sb.loiId)
+    );
   }
 
   async insertLocationOfInterest(surveyId: string, loiDoc: DocumentData) {
@@ -179,10 +235,10 @@ export class Datastore {
   async updateLoiProperties(
     surveyId: string,
     loiId: string,
-    properties: {[key: string]: string}
+    loiDoc: DocumentData
   ) {
     const loiRef = this.db_.doc(loi(surveyId, loiId));
-    await loiRef.update({properties});
+    await loiRef.update({[l.properties]: loiDoc[l.properties]});
   }
 
   static toFirestoreMap(geometry: any) {

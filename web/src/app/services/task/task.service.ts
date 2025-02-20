@@ -103,18 +103,25 @@ export class TaskService {
     surveyId: string,
     job: Job,
     tasks: List<Task>
-  ): Promise<[void, void]> {
-    return this.dataStoreService.addOrUpdateTasks(surveyId, job, tasks);
+  ): Promise<void> {
+    const newJob = job.copyWith({
+      tasks: this.dataStoreService.convertTasksListToMap(tasks),
+    });
+
+    return this.dataStoreService.addOrUpdateJob(surveyId, newJob);
   }
 
   /**
    * Add a loiTask as first element, reindex the others.
    */
-  addLoiTask(tasks: Map<string, Task>): Map<string, Task> {
+  addLoiTask(
+    tasks: Map<string, Task>,
+    addLoiTaskId?: string
+  ): Map<string, Task> {
     if (tasks.some(task => task.addLoiTask === true)) return tasks;
 
     const loiTask = new Task(
-      this.dataStoreService.generateId(),
+      addLoiTaskId || this.dataStoreService.generateId(),
       TaskType.DRAW_AREA,
       '',
       true,
@@ -142,10 +149,11 @@ export class TaskService {
 
   updateLoiTasks(
     tasks: Map<string, Task> | undefined,
-    strategy: DataCollectionStrategy
+    strategy: DataCollectionStrategy,
+    addLoiTaskId?: string
   ): Map<string, Task> {
     return strategy === DataCollectionStrategy.MIXED
-      ? this.addLoiTask(tasks || Map<string, Task>())
+      ? this.addLoiTask(tasks || Map<string, Task>(), addLoiTaskId)
       : this.removeLoiTask(tasks || Map<string, Task>());
   }
 }

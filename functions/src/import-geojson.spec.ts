@@ -15,7 +15,6 @@
  */
 
 import {
-  TestGeoPoint,
   createMockFirestore,
   stubAdminApi,
 } from '@ground/lib/dist/testing/firestore';
@@ -28,13 +27,14 @@ import {DecodedIdToken} from 'firebase-admin/auth';
 import {Blob, FormData} from 'formdata-node';
 import HttpStatus from 'http-status-codes';
 import {invokeCallbackAsync} from './handlers';
-import {OWNER_ROLE} from './common/auth';
+import {SURVEY_ORGANIZER_ROLE} from './common/auth';
 import {resetDatastore} from './common/context';
 import {Firestore} from 'firebase-admin/firestore';
 import {registry} from '@ground/lib';
 import {GroundProtos} from '@ground/proto';
 
 import Pb = GroundProtos.ground.v1beta1;
+const sv = registry.getFieldIds(Pb.Survey);
 const l = registry.getFieldIds(Pb.LocationOfInterest);
 const pr = registry.getFieldIds(Pb.LocationOfInterest.Property);
 const g = registry.getFieldIds(Pb.Geometry);
@@ -50,9 +50,9 @@ describe('importGeoJson()', () => {
   const jobId = 'job123';
   const email = 'somebody@test.it';
   const survey = {
-    name: 'Test',
-    acl: {
-      [email]: OWNER_ROLE,
+    [sv.name]: 'Test',
+    [sv.acl]: {
+      [email]: SURVEY_ORGANIZER_ROLE,
     },
   };
   const testProperties = {
@@ -83,10 +83,6 @@ describe('importGeoJson()', () => {
       name: {[pr.stringValue]: 'Dinagat Islands'},
       area: {[pr.numericValue]: 3.08},
     },
-    jobId: 'job123',
-    predefined: true,
-    geometry: {type: 'Point', coordinates: TestGeoPoint(10.1, 125.6)},
-    properties: testProperties,
   };
   const geoJsonWithPolygon = {
     type: 'FeatureCollection',
@@ -123,19 +119,6 @@ describe('importGeoJson()', () => {
     },
     [l.submissionCount]: 0,
     [l.source]: 1, // IMPORTED
-    jobId: 'job123',
-    predefined: true,
-    geometry: {
-      type: 'Polygon',
-      coordinates: {
-        0: {
-          0: TestGeoPoint(0, 100),
-          1: TestGeoPoint(0, 101),
-          2: TestGeoPoint(1, 101),
-          3: TestGeoPoint(0, 100),
-        },
-      },
-    },
   };
   const geoJsonWithMultiPolygon = {
     type: 'FeatureCollection',
@@ -198,46 +181,51 @@ describe('importGeoJson()', () => {
     },
     [l.submissionCount]: 0,
     [l.source]: 1, // IMPORTED
-    jobId: 'job123',
-    predefined: true,
-    geometry: {
-      type: 'MultiPolygon',
-      coordinates: {
-        0: {
-          0: {
-            0: TestGeoPoint(0, 100),
-            1: TestGeoPoint(0, 101),
-            2: TestGeoPoint(1, 101),
-            3: TestGeoPoint(0, 100),
-          },
+  };
+  const geoJsonWithNonCRS84Point = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [300, 10.1],
         },
-        1: {
-          0: {
-            0: TestGeoPoint(1, 120),
-            1: TestGeoPoint(1, 121),
-            2: TestGeoPoint(2, 121),
-            3: TestGeoPoint(1, 120),
-          },
-        },
+        properties: testProperties,
       },
-    },
+    ],
   };
 
   const testCases = [
     {
       desc: 'imports points',
       input: geoJsonWithPoint,
+      expectedStatus: HttpStatus.OK,
       expected: [pointLoi],
     },
     {
       desc: 'imports polygons',
       input: geoJsonWithPolygon,
+      expectedStatus: HttpStatus.OK,
       expected: [polygonLoi],
     },
     {
       desc: 'imports multi-polygons',
       input: geoJsonWithMultiPolygon,
+      expectedStatus: HttpStatus.OK,
       expected: [multiPolygonLoi],
+    },
+    {
+      desc: 'imports unsupported feature type',
+      input: {...geoJsonWithPoint, type: 'UnsupportedFeature'},
+      expectedStatus: HttpStatus.BAD_REQUEST,
+      expected: [],
+    },
+    {
+      desc: 'imports non CRS84 point',
+      input: geoJsonWithNonCRS84Point,
+      expectedStatus: HttpStatus.OK,
+      expected: [],
     },
   ];
 
@@ -265,7 +253,7 @@ describe('importGeoJson()', () => {
     return form;
   }
 
-  testCases.forEach(({desc, input, expected}) =>
+  testCases.forEach(({desc, input, expectedStatus, expected}) =>
     it(desc, async () => {
       // Add survey.
       mockFirestore.doc(`surveys/${surveyId}`).set(survey);
@@ -277,15 +265,19 @@ describe('importGeoJson()', () => {
       );
       const res = createResponseSpy();
 
-      // Run import GeoJSON function.
-      // Ideally we would call `importGeoJson` directly rather than via `invokeCallbackAsync`,
-      // but that would require mocking all middleware which may be overkill.
-      await invokeCallbackAsync(importGeoJsonCallback, req, res, {
-        email,
-      } as DecodedIdToken);
+      try {
+        // Run import GeoJSON function.
+        // Ideally we would call `importGeoJson` directly rather than via `invokeCallbackAsync`,
+        // but that would require mocking all middleware which may be overkill.
+        await invokeCallbackAsync(importGeoJsonCallback, req, res, {
+          email,
+        } as DecodedIdToken);
+      } catch (error) {
+        console.log(error);
+      }
 
       // Check post-conditions.
-      expect(res.status).toHaveBeenCalledOnceWith(HttpStatus.OK);
+      expect(res.status).toHaveBeenCalledOnceWith(expectedStatus);
       expect(await loiData(surveyId)).toEqual(expected);
     })
   );

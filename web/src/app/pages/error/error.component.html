@@ -17,7 +17,7 @@
 <div class="page error-page">
   <ground-header></ground-header>
 
-  <div class="page-content">
+  <div *ngIf="!isLoading" class="page-content">
       <img src="/assets/img/access-denied.svg">
 
       <ng-container *ngIf="errorType == ErrorType.GENERIC">
@@ -29,8 +29,10 @@
       <ng-container *ngIf="errorType == ErrorType.ACCESS_DENIED">
         <h1>Access denied</h1>
 
-        <a mat-flat-button color="primary" href="https://forms.gle/RgnFcCz9ma1gLr6v7" target="_blank">
-          Click here for registration
+        <h2 *ngIf="accessDeniedMessage.message">{{accessDeniedMessage.message}}</h2>
+
+        <a *ngIf="accessDeniedMessage.link" mat-flat-button color="primary" href="{{accessDeniedMessage.link}}" target="_blank">
+          Click here to register
         </a>
       </ng-container>
     </div>

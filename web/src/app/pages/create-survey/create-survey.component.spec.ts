@@ -28,24 +28,25 @@ import {ActivatedRoute} from '@angular/router';
 import {List, Map} from 'immutable';
 import {Observable, Subject} from 'rxjs';
 
-import {DataCollectionStrategy, Job} from 'app/models/job.model';
+import {ShareSurveyComponent} from 'app/components/share-survey/share-survey.component';
+import {Job} from 'app/models/job.model';
 import {LocationOfInterest} from 'app/models/loi.model';
-import {DataSharingType, Survey} from 'app/models/survey.model';
+import {DataSharingType, Survey, SurveyState} from 'app/models/survey.model';
 import {Task, TaskType} from 'app/models/task/task.model';
 import {
   CreateSurveyComponent,
   SetupPhase,
 } from 'app/pages/create-survey/create-survey.component';
+import {DataSharingTermsComponent} from 'app/pages/create-survey/data-sharing-terms/data-sharing-terms.component';
 import {JobDetailsComponent} from 'app/pages/create-survey/job-details/job-details.component';
 import {SurveyDetailsComponent} from 'app/pages/create-survey/survey-details/survey-details.component';
+import {DraftSurveyService} from 'app/services/draft-survey/draft-survey.service';
 import {JobService} from 'app/services/job/job.service';
 import {LocationOfInterestService} from 'app/services/loi/loi.service';
 import {NavigationService} from 'app/services/navigation/navigation.service';
 import {SurveyService} from 'app/services/survey/survey.service';
 import {TaskService} from 'app/services/task/task.service';
 import {ActivatedRouteStub} from 'testing/activated-route-stub';
-
-import {SurveyReviewComponent} from './survey-review/survey-review.component';
 
 describe('CreateSurveyComponent', () => {
   let component: CreateSurveyComponent;
@@ -56,6 +57,8 @@ describe('CreateSurveyComponent', () => {
   let activeSurvey$: Subject<Survey>;
   let lois: List<LocationOfInterest>;
   let surveyServiceSpy: jasmine.SpyObj<SurveyService>;
+  let draftSurvey$: Subject<Survey>;
+  let draftSurveyServiceSpy: jasmine.SpyObj<DraftSurveyService>;
   let jobServiceSpy: jasmine.SpyObj<JobService>;
   let loiServiceSpy: jasmine.SpyObj<LocationOfInterestService>;
   let taskServiceSpy: jasmine.SpyObj<TaskService>;
@@ -72,6 +75,7 @@ describe('CreateSurveyComponent', () => {
     '',
     /* jobs= */ Map(),
     /* acl= */ Map(),
+    /* ownerId= */ '',
     {type: DataSharingType.PRIVATE}
   );
   const surveyWithoutJob = new Survey(
@@ -80,6 +84,7 @@ describe('CreateSurveyComponent', () => {
     description,
     /* jobs= */ Map(),
     /* acl= */ Map(),
+    /* ownerId= */ '',
     {type: DataSharingType.PRIVATE}
   );
   const job = new Job(jobId, /* index */ 0, 'red', name, /* tasks= */ Map());
@@ -92,7 +97,8 @@ describe('CreateSurveyComponent', () => {
       job001: job,
     }),
     /* acl= */ Map(),
-    {type: DataSharingType.PRIVATE}
+    /* ownerId= */ '',
+    {type: DataSharingType.CUSTOM, customText: 'Good day, sir'}
   );
   const jobWithTask = new Job(
     jobId,
@@ -117,7 +123,9 @@ describe('CreateSurveyComponent', () => {
       job001: jobWithTask,
     }),
     /* acl= */ Map(),
-    {type: DataSharingType.PRIVATE}
+    /* ownerId= */ '',
+    {type: DataSharingType.PRIVATE},
+    SurveyState.READY
   );
   beforeEach(waitForAsync(() => {
     navigationServiceSpy = jasmine.createSpyObj<NavigationService>(
@@ -129,6 +137,7 @@ describe('CreateSurveyComponent', () => {
         'navigateToCreateSurvey',
         'navigateToEditSurvey',
         'getSidePanelExpanded',
+        'selectSurvey',
       ]
     );
     surveyId$ = new Subject<string | null>();
@@ -141,12 +150,23 @@ describe('CreateSurveyComponent', () => {
       'updateTitleAndDescription',
       'createSurvey',
       'getActiveSurvey',
+      'updateDataSharingTerms',
     ]);
     surveyServiceSpy.createSurvey.and.returnValue(
       new Promise(resolve => resolve(newSurveyId))
     );
     activeSurvey$ = new Subject<Survey>();
     surveyServiceSpy.getActiveSurvey$.and.returnValue(activeSurvey$);
+    surveyServiceSpy.updateDataSharingTerms.and.returnValue(
+      new Promise(resolve => resolve(undefined))
+    );
+
+    draftSurvey$ = new Subject<Survey>();
+    draftSurveyServiceSpy = jasmine.createSpyObj<DraftSurveyService>(
+      'DraftSurveyService',
+      ['init', 'getSurvey$', 'updateState', 'updateSurvey']
+    );
+    draftSurveyServiceSpy.getSurvey$.and.returnValue(draftSurvey$);
 
     jobServiceSpy = jasmine.createSpyObj<JobService>('JobService', [
       'addOrUpdateJob',
@@ -178,11 +198,13 @@ describe('CreateSurveyComponent', () => {
         CreateSurveyComponent,
         SurveyDetailsComponent,
         JobDetailsComponent,
-        SurveyReviewComponent,
+        DataSharingTermsComponent,
+        ShareSurveyComponent,
       ],
       providers: [
         {provide: NavigationService, useValue: navigationServiceSpy},
         {provide: SurveyService, useValue: surveyServiceSpy},
+        {provide: DraftSurveyService, useValue: draftSurveyServiceSpy},
         {provide: JobService, useValue: jobServiceSpy},
         {provide: LocationOfInterestService, useValue: loiServiceSpy},
         {provide: ActivatedRoute, useValue: route},
@@ -278,9 +300,9 @@ describe('CreateSurveyComponent', () => {
     }));
 
     it('navigates to edit survey page', () => {
-      expect(
-        navigationServiceSpy.navigateToEditSurvey
-      ).toHaveBeenCalledOnceWith(surveyId);
+      expect(navigationServiceSpy.selectSurvey).toHaveBeenCalledOnceWith(
+        surveyId
+      );
     });
   });
 
@@ -437,6 +459,32 @@ describe('CreateSurveyComponent', () => {
     });
   });
 
+  describe('Data Sharing Terms', () => {
+    beforeEach(fakeAsync(() => {
+      surveyId$.next(surveyId);
+      activeSurvey$.next(surveyWithJob);
+      tick();
+      // Forcibly set phase to DEFINE_DATA_SHARING_TERMS
+      component.setupPhase = SetupPhase.DEFINE_DATA_SHARING_TERMS;
+      fixture.detectChanges();
+    }));
+
+    it('updates data sharing agreement after clicking continue', () => {
+      clickContinueButton(fixture);
+
+      expect(surveyServiceSpy.updateDataSharingTerms).toHaveBeenCalledOnceWith(
+        DataSharingType.CUSTOM,
+        'Good day, sir'
+      );
+    });
+
+    it('goes back to task definition component after back button is clicked', () => {
+      clickBackButton(fixture);
+
+      expect(component.setupPhase).toBe(SetupPhase.DEFINE_TASKS);
+    });
+  });
+
   describe('Review', () => {
     beforeEach(fakeAsync(() => {
       surveyId$.next(surveyId);
@@ -447,10 +495,10 @@ describe('CreateSurveyComponent', () => {
       fixture.detectChanges();
     }));
 
-    it('goes back to task definition component after back button is clicked', () => {
+    it('goes back to data sharing component after back button is clicked', () => {
       clickBackButton(fixture);
 
-      expect(component.setupPhase).toBe(SetupPhase.DEFINE_TASKS);
+      expect(component.setupPhase).toBe(SetupPhase.DEFINE_DATA_SHARING_TERMS);
     });
   });
 });

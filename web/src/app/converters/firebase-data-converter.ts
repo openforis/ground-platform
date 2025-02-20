@@ -15,7 +15,7 @@
  */
 
 import {DocumentData, Timestamp} from '@angular/fire/firestore';
-import {List, Map} from 'immutable';
+import {Map} from 'immutable';
 
 import {AuditInfo} from 'app/models/audit-info.model';
 import {Job} from 'app/models/job.model';
@@ -185,7 +185,7 @@ export class FirebaseDataConverter {
       return result.value;
     }
     if (result.value instanceof MultipleSelection) {
-      return result.value.values.map(option => option.id).toArray();
+      return result.value.values.toArray();
     }
     if (result.value instanceof Date) {
       return Timestamp.fromDate(result.value);

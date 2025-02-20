@@ -24,7 +24,7 @@ import {
 } from './testing/http-test-helpers';
 import {DecodedIdToken} from 'firebase-admin/auth';
 import HttpStatus from 'http-status-codes';
-import {OWNER_ROLE} from './common/auth';
+import {SURVEY_ORGANIZER_ROLE} from './common/auth';
 import {resetDatastore} from './common/context';
 import {Firestore} from 'firebase-admin/firestore';
 import {exportCsvHandler} from './export-csv';
@@ -45,18 +45,26 @@ const d = registry.getFieldIds(Pb.TaskData);
 const mq = registry.getFieldIds(Pb.Task.MultipleChoiceQuestion);
 const op = registry.getFieldIds(Pb.Task.MultipleChoiceQuestion.Option);
 const cl = registry.getFieldIds(Pb.TaskData.CaptureLocationResult);
+const a = registry.getFieldIds(Pb.AuditInfo);
 
 describe('exportCsv()', () => {
   let mockFirestore: Firestore;
   const email = 'somebody@test.it';
   const userId = 'user5000';
   const survey = {
-    id: 'survey001',
     [sv.name]: 'Test survey',
     [sv.acl]: {
-      [email]: OWNER_ROLE,
+      [email]: SURVEY_ORGANIZER_ROLE,
     },
   };
+  const auditInfo = {
+    [a.userId]: userId,
+    [a.displayName]: 'display_name',
+    [a.emailAddress]: 'address@email.com',
+    [a.clientTimestamp]: {1: 1, 2: 0},
+    [a.serverTimestamp]: {1: 1, 2: 0},
+  };
+
   const emptyJob = {id: 'job123'};
   const job1 = {
     id: 'job123',
@@ -122,12 +130,13 @@ describe('exportCsv()', () => {
   };
   const pointLoi1 = {
     id: 'loi100',
+    [l.id]: 'loi100',
     [l.jobId]: job1.id,
     [l.customTag]: 'POINT_001',
     [l.geometry]: {
       [g.point]: {[p.coordinates]: {[c.latitude]: 10.1, [c.longitude]: 125.6}},
     },
-    [l.submission_count]: 0,
+    [l.submissionCount]: 0,
     [l.source]: Pb.LocationOfInterest.Source.IMPORTED,
     [l.properties]: {
       name: {[pr.stringValue]: 'Dinagat Islands'},
@@ -136,6 +145,7 @@ describe('exportCsv()', () => {
   };
   const pointLoi2 = {
     id: 'loi200',
+    [l.id]: 'loi200',
     [l.jobId]: job1.id,
     [l.customTag]: 'POINT_002',
     [l.geometry]: {
@@ -149,6 +159,7 @@ describe('exportCsv()', () => {
   };
   const submission1a = {
     id: '001a',
+    [s.id]: '001a',
     [s.loiId]: pointLoi1.id,
     [s.index]: 1,
     [s.jobId]: job1.id,
@@ -172,6 +183,7 @@ describe('exportCsv()', () => {
   };
   const submission1b = {
     id: '001b',
+    [s.id]: '001b',
     [s.loiId]: pointLoi1.id,
     [s.index]: 2,
     [s.jobId]: job1.id,
@@ -194,9 +206,11 @@ describe('exportCsv()', () => {
         },
       },
     ],
+    [s.created]: auditInfo,
   };
   const submission2a = {
     id: '002a',
+    [s.id]: '002a',
     [s.loiId]: pointLoi2.id,
     [s.index]: 1,
     [s.jobId]: job1.id,
@@ -207,7 +221,7 @@ describe('exportCsv()', () => {
         [d.taskId]: 'task004',
         [d.multipleChoiceResponses]: {
           '1': ['aaa', 'bbb'],
-          '2': 'Other',
+          '2': 'other',
         },
       },
       {
@@ -239,9 +253,9 @@ describe('exportCsv()', () => {
       submissions: [],
       expectedFilename: 'ground-export.csv',
       expectedCsv: [
-        '"system:index","geometry","name","area","data:contributor_name","data:contributor_email"',
-        '"POINT_001","POINT (125.6 10.1)","Dinagat Islands",3.08,,',
-        '"POINT_002","POINT (8.3 47.05)","Luzern",,,',
+        '"system:index","geometry","name","area","data:contributor_name","data:contributor_email","data:created_client_timestamp","data:created_server_timestamp"',
+        '"POINT_001","POINT (125.6 10.1)","Dinagat Islands",3.08,,,,',
+        '"POINT_002","POINT (8.3 47.05)","Luzern",,,,,',
       ],
     },
     {
@@ -253,10 +267,25 @@ describe('exportCsv()', () => {
       submissions: [submission1a, submission1b, submission2a],
       expectedFilename: 'test-job.csv',
       expectedCsv: [
-        '"system:index","geometry","name","area","data:What is the meaning of life?","data:How much?","data:When?","data:Which ones?","data:Where are you now?","data:Take a photo","data:contributor_name","data:contributor_email"',
-        '"POINT_001","POINT (125.6 10.1)","Dinagat Islands",3.08,"Submission 1",42,,,,,,',
-        '"POINT_001","POINT (125.6 10.1)","Dinagat Islands",3.08,"Submission 2",,"2012-03-08T12:17:24.000Z",,,,,',
-        '"POINT_002","POINT (8.3 47.05)","Luzern",,,,,"AAA,BBB,Other","POINT (45 -123)","http://photo/url",,',
+        '"system:index","geometry","name","area","data:What is the meaning of life?","data:How much?","data:When?","data:Which ones?","data:Where are you now?","data:Take a photo","data:contributor_name","data:contributor_email","data:created_client_timestamp","data:created_server_timestamp"',
+        '"POINT_001","POINT (125.6 10.1)","Dinagat Islands",3.08,"Submission 1",42,,,,,,,"1970-01-01T00:00:00.000Z","1970-01-01T00:00:00.000Z"',
+        '"POINT_001","POINT (125.6 10.1)","Dinagat Islands",3.08,"Submission 2",,"2012-03-08T12:17:24.000Z",,,,"display_name","address@email.com","1970-01-01T00:00:01.000Z","1970-01-01T00:00:01.000Z"',
+        '"POINT_002","POINT (8.3 47.05)","Luzern",,,,,"AAA,BBB,Other: other","POINT (45 -123)","http://photo/url",,,"1970-01-01T00:00:00.000Z","1970-01-01T00:00:00.000Z"',
+      ],
+    },
+    {
+      desc: 'export points w and w/o submissions',
+      jobId: job1.id,
+      survey: survey,
+      jobs: [job1],
+      lois: [pointLoi1, pointLoi2],
+      submissions: [submission1a, submission1b],
+      expectedFilename: 'test-job.csv',
+      expectedCsv: [
+        '"system:index","geometry","name","area","data:What is the meaning of life?","data:How much?","data:When?","data:Which ones?","data:Where are you now?","data:Take a photo","data:contributor_name","data:contributor_email","data:created_client_timestamp","data:created_server_timestamp"',
+        '"POINT_001","POINT (125.6 10.1)","Dinagat Islands",3.08,"Submission 1",42,,,,,,,"1970-01-01T00:00:00.000Z","1970-01-01T00:00:00.000Z"',
+        '"POINT_001","POINT (125.6 10.1)","Dinagat Islands",3.08,"Submission 2",,"2012-03-08T12:17:24.000Z",,,,"display_name","address@email.com","1970-01-01T00:00:01.000Z","1970-01-01T00:00:01.000Z"',
+        '"POINT_002","POINT (8.3 47.05)","Luzern",,,,,,,,,,,',
       ],
     },
   ];

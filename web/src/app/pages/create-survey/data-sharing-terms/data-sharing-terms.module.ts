@@ -1,5 +1,5 @@
 /**
- * Copyright 2020 The Ground Authors.
+ * Copyright 2024 The Ground Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the 'License');
  * you may not use this file except in compliance with the License.
@@ -14,28 +14,28 @@
  * limitations under the License.
  */
 
+import {CommonModule} from '@angular/common';
 import {NgModule} from '@angular/core';
+import {FormsModule, ReactiveFormsModule} from '@angular/forms';
 import {MatButtonModule} from '@angular/material/button';
 import {MatCardModule} from '@angular/material/card';
-import {MatIconModule} from '@angular/material/icon';
-import {MatListModule} from '@angular/material/list';
-import {MatMenuModule} from '@angular/material/menu';
-import {BrowserModule} from '@angular/platform-browser';
+import {MatFormFieldModule} from '@angular/material/form-field';
+import {MatInputModule} from '@angular/material/input';
+import {MatRadioModule} from '@angular/material/radio';
 
-import {LocationOfInterestPanelHeaderModule} from './loi-panel-header/loi-panel-header.module';
-import {LocationOfInterestPanelComponent} from './loi-panel.component';
+import {DataSharingTermsComponent} from 'app/pages/create-survey/data-sharing-terms/data-sharing-terms.component';
 
 @NgModule({
+  declarations: [DataSharingTermsComponent],
   imports: [
-    BrowserModule,
-    MatCardModule,
-    MatListModule,
-    MatIconModule,
+    CommonModule,
     MatButtonModule,
-    MatMenuModule,
-    LocationOfInterestPanelHeaderModule,
+    MatCardModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatRadioModule,
+    ReactiveFormsModule,
   ],
-  exports: [LocationOfInterestPanelComponent],
-  declarations: [LocationOfInterestPanelComponent],
+  exports: [DataSharingTermsComponent],
 })
-export class LocationOfInterestPanelModule {}
+export class DataSharingTermsModule {}

@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import {List, Map} from 'immutable';
+import {Map as ImmutableMap, List} from 'immutable';
 
+import {AclEntry} from './acl-entry.model';
 import {Copiable} from './copiable';
 import {Job} from './job.model';
 import {Role} from './role.model';
@@ -27,6 +28,28 @@ export enum DataSharingType {
   CUSTOM = 3,
 }
 
+export const DATA_SHARING_TYPE_DESCRIPTION = new Map<DataSharingType, string>([
+  [
+    DataSharingType.PRIVATE,
+    'Survey organizers may <strong>not</strong> share and use collected data publicly or with third parties',
+  ],
+  [
+    DataSharingType.PUBLIC,
+    'Data collectors waive all rights to data collected as part of this survey under <a href="https://creativecommons.org/public-domain/cc0/" target="_blank">the CC0 license</a>.<br>Survey organizers may share data freely.',
+  ],
+  [
+    DataSharingType.CUSTOM,
+    'Data collectors must agree to the custom terms you provide here',
+  ],
+]);
+
+/** Enum for survey's current state. */
+export enum SurveyState {
+  UNSAVED = 0,
+  DRAFT = 1,
+  READY = 2,
+}
+
 export class Survey extends Copiable {
   static readonly UNSAVED_NEW = new Survey(
     /* id= */
@@ -36,40 +59,50 @@ export class Survey extends Copiable {
     /* description= */
     '',
     /* jobs= */
-    Map<string, Job>(),
+    ImmutableMap<string, Job>(),
     /* acl= */
-    Map<string, Role>(),
+    ImmutableMap<string, Role>(),
+    /* ownerId= */
+    '',
     /* dataSharingTerms= */
-    {type: DataSharingType.PRIVATE}
+    {type: DataSharingType.PRIVATE},
+    SurveyState.UNSAVED
   );
 
   constructor(
     readonly id: string,
     readonly title: string,
     readonly description: string,
-    readonly jobs: Map<string, Job>,
-    readonly acl: Map<string, Role>,
-    readonly dataSharingTerms: {type: DataSharingType; customText?: string}
+    readonly jobs: ImmutableMap<string, Job>,
+    readonly acl: ImmutableMap<string, Role>,
+    readonly ownerId: string,
+    readonly dataSharingTerms: {type: DataSharingType; customText?: string},
+    readonly state?: SurveyState
   ) {
     super();
+  }
+
+  hasJobs(): boolean {
+    return this.jobs.size > 0;
   }
 
   getJob(jobId: string): Job | undefined {
     return this.jobs.get(jobId);
   }
 
-  isUnsavedNew() {
-    return (
-      !this.id &&
-      !this.title &&
-      !this.description &&
-      !this.jobs.size &&
-      !this.acl.size
-    );
-  }
-
   getJobsSorted(): List<Job> {
     return this.jobs.sortBy(job => job.index).toList();
+  }
+
+  getAclSorted(): ImmutableMap<string, Role> {
+    return this.acl.sortBy(([key]) => key);
+  }
+
+  getAclEntriesSorted(): AclEntry[] {
+    return this.getAclSorted()
+      .entrySeq()
+      .map(entry => new AclEntry(entry[0], entry[1]))
+      .toArray();
   }
 
   getPreviousJob(job: Job): Job | undefined {

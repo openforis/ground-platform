@@ -25,16 +25,6 @@ limitations under the License.
       <div class="loi-name" *ngIf="isSidePanelExpanded()">
         {{ node.name }}
       </div>
-      <button
-        mat-icon-button
-        *ngIf="isSidePanelExpanded() && hasJobProperties(node)"
-        aria-label="properties"
-        (click)="openPropertiesDialog($event, node)"
-      >
-        <mat-icon class="material-symbols-outlined show-properties-icon">
-          data_info_alert
-        </mat-icon>
-      </button>
     </mat-tree-node>
     <!-- Tree node for jobs -->
     <mat-tree-node
@@ -73,7 +63,12 @@ limitations under the License.
           <mat-menu #jobMenu="matMenu">
             <a (click)="onDownloadCsvClick()" target="_blank">
               <button mat-menu-item>
-                <span>Download job data</span>
+                <span>Download job data (CSV)</span>
+              </button>
+            </a>
+            <a (click)="onDownloadGeoJsonClick()" target="_blank">
+              <button mat-menu-item>
+                <span>Download site locations (GeoJSON)</span>
               </button>
             </a>
           </mat-menu>
