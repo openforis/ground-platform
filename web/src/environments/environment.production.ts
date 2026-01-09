@@ -19,21 +19,22 @@ import { FirebaseOptions } from '@angular/fire/app';
 
 // Replace with production values for your hosted environment.
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: '',
-  measurementId: '',
-} as FirebaseOptions;
+export const firebaseConfig = {
+  apiKey: 'AIzaSyDD6iGVMf0Ek31I5ygQeiebQiDIvntYRxs',
+  authDomain: 'of-ground.firebaseapp.com',
+  projectId: 'of-ground',
+  storageBucket: 'of-ground.appspot.com',
+  messagingSenderId: '742909325672',
+  appId: '1:742909325672:web:c9243daa3d4bee0418e6dd',
+  measurementId: 'G-FC8YH2FPYB',
+};
+
 
 export const environment = {
   production: true,
   googleMapsApiKey: firebaseConfig.apiKey,
   firebase: firebaseConfig,
-  cloudFunctionsUrl: '',
+  cloudFunctionsUrl: `https://${firebaseConfig.projectId}.web.app`,
   useEmulators: false,
   env: Env.Prod,
 };
