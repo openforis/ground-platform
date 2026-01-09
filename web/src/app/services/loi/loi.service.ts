@@ -14,17 +14,17 @@
  * limitations under the License.
  */
 
-import {Injectable} from '@angular/core';
-import {List} from 'immutable';
-import {Observable, ReplaySubject, of} from 'rxjs';
-import {map, switchMap} from 'rxjs/operators';
+import { Injectable } from '@angular/core';
+import { List } from 'immutable';
+import { Observable, ReplaySubject, of } from 'rxjs';
+import { map, switchMap } from 'rxjs/operators';
 
-import {GeometryType} from 'app/models/geometry/geometry';
-import {LocationOfInterest} from 'app/models/loi.model';
-import {SurveyState} from 'app/models/survey.model';
-import {AuthService} from 'app/services/auth/auth.service';
-import {DataStoreService} from 'app/services/data-store/data-store.service';
-import {SurveyService} from 'app/services/survey/survey.service';
+import { GeometryType } from 'app/models/geometry/geometry';
+import { LocationOfInterest } from 'app/models/loi.model';
+import { SurveyDataVisibility, SurveyState } from 'app/models/survey.model';
+import { AuthService } from 'app/services/auth/auth.service';
+import { DataStoreService } from 'app/services/data-store/data-store.service';
+import { SurveyService } from 'app/services/survey/survey.service';
 
 @Injectable({
   providedIn: 'root',
@@ -52,7 +52,9 @@ export class LocationOfInterestService {
                   : this.dataStore.getAccessibleLois$(
                       survey,
                       user.id,
-                      this.surveyService.canManageSurvey()
+                      this.surveyService.canManageSurvey() ||
+                        survey.dataVisibility ===
+                          SurveyDataVisibility.ALL_SURVEY_PARTICIPANTS
                     )
               )
             )
@@ -61,7 +63,7 @@ export class LocationOfInterestService {
 
     this.selectedLoi$ = this.selectedLoiId$.pipe(
       switchMap(loiId =>
-        this.lois$.pipe(map(lois => lois.find(({id}) => id === loiId)!))
+        this.lois$.pipe(map(lois => lois.find(({ id }) => id === loiId)!))
       )
     );
   }
@@ -120,7 +122,7 @@ export class LocationOfInterestService {
   }
 
   static getDisplayName(loi: LocationOfInterest): string {
-    const {customId, properties} = loi;
+    const { customId, properties } = loi;
     const name = properties?.get('name')?.toString()?.trim() || '';
     const loiId = customId?.trim() || '';
     if (name && loiId) {
@@ -152,14 +154,14 @@ export class LocationOfInterestService {
   }
 
   async addPoint(
-    lat: number,
-    lng: number,
-    jobId: string
+    _lat: number,
+    _lng: number,
+    _jobId: string
   ): Promise<LocationOfInterest | null> {
     throw new Error('Adding LOIs via web app not yet supported');
   }
 
-  async updatePoint(loi: LocationOfInterest): Promise<void> {
+  async updatePoint(_loi: LocationOfInterest): Promise<void> {
     throw new Error('Editing LOIs via web app not yet supported');
   }
 }

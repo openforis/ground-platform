@@ -14,18 +14,19 @@
  * limitations under the License.
  */
 
-import {Map} from 'immutable';
+import { Map } from 'immutable';
 
-import {DataCollectionStrategy, Job} from 'app/models/job.model';
-import {Role} from 'app/models/role.model';
+import { DataCollectionStrategy, Job } from 'app/models/job.model';
+import { Role } from 'app/models/role.model';
 import {
   DataSharingType,
   Survey,
+  SurveyDataVisibility,
   SurveyGeneralAccess,
   SurveyState,
 } from 'app/models/survey.model';
-import {Task} from 'app/models/task/task.model';
-import {User} from 'app/models/user.model';
+import { Task } from 'app/models/task/task.model';
+import { User } from 'app/models/user.model';
 
 /**
  * Shorthand builders with reasonable defaults for use by tests. Tests should
@@ -62,7 +63,8 @@ export class TestData {
         type: DataSharingType.PRIVATE,
       },
       SurveyState.DRAFT,
-      SurveyGeneralAccess.RESTRICTED
+      SurveyGeneralAccess.RESTRICTED,
+      SurveyDataVisibility.CONTRIBUTOR_AND_ORGANIZERS
     );
   }
 

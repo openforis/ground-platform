@@ -1,0 +1,129 @@
+/**
+ * Copyright 2025 The Ground Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Storage } from '@angular/fire/storage';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+import { MatListModule } from '@angular/material/list';
+import { MatMenuModule } from '@angular/material/menu';
+import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
+import { List, Map } from 'immutable';
+import { of } from 'rxjs';
+
+import { AuditInfo } from 'app/models/audit-info.model';
+import { Job } from 'app/models/job.model';
+import { Submission } from 'app/models/submission/submission.model';
+import { DataSharingType, Survey } from 'app/models/survey.model';
+import { Task } from 'app/models/task/task.model';
+import { GroundIconModule } from 'app/modules/ground-icon.module';
+import { NavigationService } from 'app/services/navigation/navigation.service';
+import { SubmissionService } from 'app/services/submission/submission.service';
+
+import { SubmissionPanelComponent } from './submission-panel.component';
+
+describe('SubmissionPanelComponent', () => {
+  let component: SubmissionPanelComponent;
+  let fixture: ComponentFixture<SubmissionPanelComponent>;
+  let submissionService: jasmine.SpyObj<SubmissionService>;
+  let navigationService: jasmine.SpyObj<NavigationService>;
+  let storageSpy: jasmine.SpyObj<Storage>;
+
+  const mockSurvey = new Survey(
+    'survey1',
+    'Survey Title',
+    'Description',
+    Map(),
+    Map(),
+    'owner1',
+    { type: DataSharingType.PRIVATE }
+  );
+
+  const mockUser = {
+    id: 'user001',
+    email: 'email@gmail.com',
+    displayName: 'User 1',
+    isAuthenticated: true,
+  };
+
+  const mockAuditInfo = new AuditInfo(mockUser, new Date(), new Date());
+
+  const mockSubmission = new Submission(
+    'sub1',
+    'loi1',
+    { id: 'job1', getTasksSorted: () => List<Task>() } as unknown as Job,
+    mockAuditInfo,
+    mockAuditInfo,
+    Map()
+  );
+
+  beforeEach(async () => {
+    submissionService = jasmine.createSpyObj('SubmissionService', [
+      'getSelectedSubmission$',
+    ]);
+    navigationService = jasmine.createSpyObj('NavigationService', [
+      'getTaskId$',
+      'selectLocationOfInterest',
+      'showSubmissionDetailWithHighlightedTask',
+    ]);
+    storageSpy = jasmine.createSpyObj('Storage', ['ref']);
+
+    submissionService.getSelectedSubmission$.and.returnValue(
+      of(mockSubmission)
+    );
+    navigationService.getTaskId$.and.returnValue(of(null));
+
+    await TestBed.configureTestingModule({
+      declarations: [SubmissionPanelComponent],
+      imports: [
+        MatButtonModule,
+        MatIconModule,
+        MatListModule,
+        MatMenuModule,
+        BrowserAnimationsModule,
+        GroundIconModule,
+      ],
+      providers: [
+        { provide: NavigationService, useValue: navigationService },
+        { provide: SubmissionService, useValue: submissionService },
+        { provide: Storage, useValue: storageSpy },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    }).compileComponents();
+  });
+
+  beforeEach(() => {
+    fixture = TestBed.createComponent(SubmissionPanelComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('activeSurvey', mockSurvey);
+    fixture.detectChanges();
+  });
+
+  it('should create', () => {
+    expect(component).toBeTruthy();
+  });
+
+  it('should navigate back to submission list', () => {
+    component.submission = mockSubmission;
+    component.navigateToSubmissionList();
+
+    expect(navigationService.selectLocationOfInterest).toHaveBeenCalledWith(
+      mockSurvey.id,
+      mockSubmission.loiId
+    );
+  });
+});

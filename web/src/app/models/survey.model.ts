@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-import {Map as ImmutableMap, List} from 'immutable';
+import '@angular/localize/init';
 
-import {AclEntry} from './acl-entry.model';
-import {Copiable} from './copiable';
-import {Job} from './job.model';
-import {Role} from './role.model';
+import { Map as ImmutableMap, List } from 'immutable';
+
+import { AclEntry } from './acl-entry.model';
+import { Copiable } from './copiable';
+import { Job } from './job.model';
+import { Role } from './role.model';
 
 /** Enum for type of data sharing terms. */
 export enum DataSharingType {
@@ -31,15 +33,15 @@ export enum DataSharingType {
 export const DATA_SHARING_TYPE_DESCRIPTION = new Map<DataSharingType, string>([
   [
     DataSharingType.PRIVATE,
-    'Survey organizers may <strong>not</strong> share and use collected data publicly or with third parties',
+    $localize`:@@app.cards.dataSharingTerms.private.description:Data collectors must agree to share data with survey organizers`,
   ],
   [
     DataSharingType.PUBLIC,
-    'Data collectors waive all rights to data collected as part of this survey under <a href="https://creativecommons.org/public-domain/cc0/" target="_blank">the CC0 license</a>.<br>Survey organizers may share data freely.',
+    $localize`:@@app.cards.dataSharingTerms.public.description:Data collectors waive all rights to data collected as part of this survey under <a href="https://creativecommons.org/public-domain/cc0/" target="_blank">the CC0 license</a>. Survey organizers may share data freely.`,
   ],
   [
     DataSharingType.CUSTOM,
-    'Data collectors must agree to the custom terms you provide here',
+    $localize`:@@app.cards.dataSharingTerms.custom.description:Define custom terms that data collectors must agree to`,
   ],
 ]);
 
@@ -57,6 +59,12 @@ export enum SurveyGeneralAccess {
   PUBLIC = 3,
 }
 
+/** Enum for survey's current data visibility. */
+export enum SurveyDataVisibility {
+  ALL_SURVEY_PARTICIPANTS = 1,
+  CONTRIBUTOR_AND_ORGANIZERS = 2,
+}
+
 export class Survey extends Copiable {
   static readonly UNSAVED_NEW = new Survey(
     /* id= */
@@ -72,9 +80,10 @@ export class Survey extends Copiable {
     /* ownerId= */
     '',
     /* dataSharingTerms= */
-    {type: DataSharingType.PRIVATE},
+    { type: DataSharingType.PRIVATE },
     SurveyState.UNSAVED,
-    SurveyGeneralAccess.RESTRICTED
+    SurveyGeneralAccess.RESTRICTED,
+    SurveyDataVisibility.CONTRIBUTOR_AND_ORGANIZERS
   );
 
   constructor(
@@ -84,9 +93,10 @@ export class Survey extends Copiable {
     readonly jobs: ImmutableMap<string, Job>,
     readonly acl: ImmutableMap<string, Role>,
     readonly ownerId: string,
-    readonly dataSharingTerms: {type: DataSharingType; customText?: string},
+    readonly dataSharingTerms: { type: DataSharingType; customText?: string },
     readonly state?: SurveyState,
-    readonly generalAccess?: SurveyGeneralAccess
+    readonly generalAccess?: SurveyGeneralAccess,
+    readonly dataVisibility?: SurveyDataVisibility
   ) {
     super();
   }

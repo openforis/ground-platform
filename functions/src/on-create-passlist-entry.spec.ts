@@ -19,14 +19,15 @@ import {
   newDocumentSnapshot,
   newEventContext,
   stubAdminApi,
-} from '@ground/lib/dist/testing/firestore';
-import {resetDatastore} from './common/context';
-import {Firestore} from 'firebase-admin/firestore';
+} from '@ground/lib/testing/firestore';
+import { resetDatastore } from './common/context';
+import { Firestore, QueryDocumentSnapshot } from 'firebase-admin/firestore';
+import firebaseFunctionsTest from 'firebase-functions-test';
 import * as functions from './index';
 import * as context from './common/context';
-import {MailService} from './common/mail-service';
+import { MailService } from './common/mail-service';
 
-const test = require('firebase-functions-test')();
+const test = firebaseFunctionsTest();
 
 describe('onCreatePasslistEntry()', () => {
   let mockFirestore: Firestore;
@@ -65,27 +66,29 @@ describe('onCreatePasslistEntry()', () => {
 
   it('passlist notification email template exists', async () => {
     await mockFirestore.collection('passlists').add({});
-    await test.wrap(functions.onCreatePasslistEntry)(newDocumentSnapshot({}));
+    await test.wrap(functions.onCreatePasslistEntry)(
+      newDocumentSnapshot({}) as QueryDocumentSnapshot
+    );
     expect(getMailServiceMock).not.toHaveBeenCalled();
   });
 
   it('mail server config exists', async () => {
     const docRef = mockFirestore.doc('config/mail');
-    docRef.set({server: serverConfig});
+    docRef.set({ server: serverConfig });
     const docSnapshot = await docRef.get();
     const data = docSnapshot.data();
-    expect(data).toEqual({server: serverConfig});
+    expect(data).toEqual({ server: serverConfig });
     expect(docSnapshot.exists).toBe(true);
     expect(docSnapshot.id).toBe('mail');
   });
 
   it('sends email notification', async () => {
-    mockFirestore.doc('config/mail').set({server: serverConfig});
+    mockFirestore.doc('config/mail').set({ server: serverConfig });
     mockFirestore.doc('config/mail/templates/passlisted').set(mail);
     mockFirestore.doc(`passlists/${mail.to}`).set({});
     await test.wrap(functions.onCreatePasslistEntry)(
-      newDocumentSnapshot({}),
-      newEventContext({entryId: mail.to})
+      newDocumentSnapshot({}) as QueryDocumentSnapshot,
+      newEventContext({ entryId: mail.to })
     );
     expect(getMailServiceMock).toHaveBeenCalled();
     expect(mailServiceMock.sendMail).toHaveBeenCalled();

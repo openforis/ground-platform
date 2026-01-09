@@ -14,96 +14,84 @@
  * limitations under the License.
  */
 
-import {HttpClient, HttpClientModule} from '@angular/common/http';
-import {NgModule} from '@angular/core';
-import {AngularFireModule} from '@angular/fire/compat';
-import {AngularFireAuthModule} from '@angular/fire/compat/auth';
-import {USE_EMULATOR as USE_DATABASE_EMULATOR} from '@angular/fire/compat/database';
 import {
-  AngularFirestoreModule,
-  SETTINGS as FIRESTORE_SETTINGS,
-  USE_EMULATOR as USE_FIRESTORE_EMULATOR,
-} from '@angular/fire/compat/firestore';
+  provideHttpClient,
+  withInterceptorsFromDi,
+} from '@angular/common/http';
+import { NgModule } from '@angular/core';
+import { initializeApp, provideFirebaseApp } from '@angular/fire/app';
+import { getAuth, provideAuth } from '@angular/fire/auth';
 import {
-  AngularFireFunctionsModule,
-  USE_EMULATOR as USE_FUNCTIONS_EMULATOR,
-} from '@angular/fire/compat/functions';
-import {AngularFireStorageModule} from '@angular/fire/compat/storage';
-import {BrowserModule} from '@angular/platform-browser';
-import {BrowserAnimationsModule} from '@angular/platform-browser/animations';
-import {TranslateLoader, TranslateModule} from '@ngx-translate/core';
-import {TranslateHttpLoader} from '@ngx-translate/http-loader';
-import {initializeApp} from 'firebase/app';
-import {GoogleAuthProvider} from 'firebase/auth';
-import {FirebaseUIModule, firebaseui} from 'firebaseui-angular';
-
-import {AppComponent} from 'app/app.component';
-import {MainPageContainerModule} from 'app/pages/main-page-container/main-page-container.module';
-import {AppRoutingModule} from 'app/routing.module';
-import {environment} from 'environments/environment';
-
-const firebaseUiAuthConfig: firebaseui.auth.Config = {
-  // Popup is required to prevent some browsers and Chrome incognito for getting
-  // blocked due to unsupported 3rd party cookies.
-  signInFlow: 'popup',
-  // For now we only use Google for auth.
-  signInOptions: [GoogleAuthProvider.PROVIDER_ID],
-  // Required to enable one-tap sign-up credential helper.
-  credentialHelper: firebaseui.auth.CredentialHelper.GOOGLE_YOLO,
-};
-
-export function HttpLoaderFactory(http: HttpClient) {
-  return new TranslateHttpLoader(http, './assets/i18n/', '.json');
-}
-
-initializeApp(environment.firebase);
+  connectFirestoreEmulator,
+  getFirestore,
+  provideFirestore,
+} from '@angular/fire/firestore';
+import {
+  connectFunctionsEmulator,
+  getFunctions,
+  provideFunctions,
+} from '@angular/fire/functions';
+import {
+  getRemoteConfig,
+  provideRemoteConfig,
+} from '@angular/fire/remote-config';
+import {
+  connectStorageEmulator,
+  getStorage,
+  provideStorage,
+} from '@angular/fire/storage';
+import { BrowserModule } from '@angular/platform-browser';
+import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
+import { AppComponent } from 'app/app.component';
+import { MainPageContainerModule } from 'app/components/main-page-container/main-page-container.module';
+import { AppRoutingModule } from 'app/routing.module';
+import { environment } from 'environments/environment';
 
 @NgModule({
   declarations: [AppComponent],
-  providers: [
-    {
-      provide: FIRESTORE_SETTINGS,
-      useValue: {ignoreUndefinedProperties: true},
-    },
-    // Emulator ports defined in ../firebase.local.json
-    // TODO(#979): Set up auth emulator and enable rules.
-    {
-      provide: USE_DATABASE_EMULATOR,
-      useValue: environment.useEmulators ? ['localhost', 9000] : undefined,
-    },
-    {
-      provide: USE_FIRESTORE_EMULATOR,
-      useValue: environment.useEmulators ? ['localhost', 8080] : undefined,
-    },
-    {
-      provide: USE_FUNCTIONS_EMULATOR,
-      useValue: environment.useEmulators ? ['localhost', 5001] : undefined,
-    },
-  ],
+  bootstrap: [AppComponent],
   imports: [
-    // TODO(#967): Replace compat libs with new AngularFire APIs:
-    //   provideFirebaseApp(() => initializeApp(environment.firebase)),
-    //   provideFirestore(() => getFirestore()),
-    AngularFireModule.initializeApp(environment.firebase),
-    AngularFireModule,
-    AngularFireAuthModule,
-    AngularFirestoreModule,
-    AngularFireFunctionsModule,
-    AngularFireStorageModule,
     BrowserAnimationsModule,
     BrowserModule,
     AppRoutingModule,
-    FirebaseUIModule.forRoot(firebaseUiAuthConfig),
-    HttpClientModule,
+
     MainPageContainerModule,
-    TranslateModule.forRoot({
-      loader: {
-        provide: TranslateLoader,
-        useFactory: HttpLoaderFactory,
-        deps: [HttpClient],
-      },
-    }),
   ],
-  bootstrap: [AppComponent],
+  providers: [
+    provideFirebaseApp(() => initializeApp(environment.firebase!)),
+    provideAuth(() => {
+      const auth = getAuth();
+      // TODO: https://github.com/google/ground-platform/issues/979
+      //   Set up auth emulator and enable rules.
+      // if (environment.useEmulators) {
+      //   connectAuthEmulator(auth, 'http://localhost:9099');
+      // }
+      return auth;
+    }),
+    provideFirestore(() => {
+      const firestore = getFirestore();
+      if (environment.useEmulators) {
+        connectFirestoreEmulator(firestore, 'localhost', 8080);
+      }
+      return firestore;
+    }),
+    provideFunctions(() => {
+      const functions = getFunctions();
+      if (environment.useEmulators) {
+        connectFunctionsEmulator(functions, 'localhost', 5001);
+      }
+      return functions;
+    }),
+    provideRemoteConfig(() => getRemoteConfig()),
+    provideStorage(() => {
+      const storage = getStorage();
+      if (environment.useEmulators) {
+        connectStorageEmulator(storage, 'localhost', 9199);
+      }
+      return storage;
+    }),
+
+    provideHttpClient(withInterceptorsFromDi()),
+  ],
 })
 export class AppModule {}

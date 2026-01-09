@@ -14,20 +14,26 @@
  * limitations under the License.
  */
 
-import {DocumentData} from '@angular/fire/firestore';
-import {toDocumentData} from '@ground/lib';
-import {GroundProtos} from '@ground/proto';
-import {List, Map} from 'immutable';
+import { DocumentData } from '@angular/fire/firestore';
+import { toDocumentData } from '@ground/lib';
+import { GroundProtos } from '@ground/proto';
+import { List, Map } from 'immutable';
 
-import {Job} from 'app/models/job.model';
-import {Role} from 'app/models/role.model';
-import {DataSharingType, Survey, SurveyState} from 'app/models/survey.model';
+import { Job } from 'app/models/job.model';
+import { Role } from 'app/models/role.model';
+import {
+  DataSharingType,
+  Survey,
+  SurveyDataVisibility,
+  SurveyGeneralAccess,
+  SurveyState,
+} from 'app/models/survey.model';
 import {
   Cardinality,
   MultipleChoice,
 } from 'app/models/task/multiple-choice.model';
-import {TaskCondition} from 'app/models/task/task-condition.model';
-import {Task, TaskType} from 'app/models/task/task.model';
+import { TaskCondition } from 'app/models/task/task-condition.model';
+import { Task, TaskType } from 'app/models/task/task.model';
 
 import Pb = GroundProtos.ground.v1beta1;
 
@@ -47,6 +53,23 @@ const PB_DATA_SHARING_TYPE = Map([
 const PB_STATES = Map([
   [SurveyState.DRAFT, Pb.Survey.State.DRAFT],
   [SurveyState.READY, Pb.Survey.State.READY],
+]);
+
+const PB_GENERAL_ACCESS = Map([
+  [SurveyGeneralAccess.RESTRICTED, Pb.Survey.GeneralAccess.RESTRICTED],
+  [SurveyGeneralAccess.UNLISTED, Pb.Survey.GeneralAccess.UNLISTED],
+  [SurveyGeneralAccess.PUBLIC, Pb.Survey.GeneralAccess.PUBLIC],
+]);
+
+const PB_DATA_VISIBILITY = Map([
+  [
+    SurveyDataVisibility.CONTRIBUTOR_AND_ORGANIZERS,
+    Pb.Survey.DataVisibility.CONTRIBUTOR_AND_ORGANIZERS,
+  ],
+  [
+    SurveyDataVisibility.ALL_SURVEY_PARTICIPANTS,
+    Pb.Survey.DataVisibility.ALL_SURVEY_PARTICIPANTS,
+  ],
 ]);
 
 /**
@@ -86,19 +109,27 @@ export function surveyToDocument(
     ownerId,
     dataSharingTerms,
     state,
+    generalAccess,
+    dataVisibility,
   } = survey;
 
   return toDocumentData(
     new Pb.Survey({
       id: surveyId,
       name,
-      ...(description && {description}),
-      ...(acl && {acl: acl.map(role => roleToProtoRole(role)).toObject()}),
+      ...(description && { description }),
+      ...(acl && { acl: acl.map(role => roleToProtoRole(role)).toObject() }),
       ownerId,
       ...(dataSharingTerms && {
         dataSharingTerms: toDataSharingTermsMessage(dataSharingTerms),
       }),
       state: PB_STATES.get(state || SurveyState.DRAFT),
+      generalAccess: PB_GENERAL_ACCESS.get(
+        generalAccess || SurveyGeneralAccess.RESTRICTED
+      ),
+      dataVisibility: PB_DATA_VISIBILITY.get(
+        dataVisibility || SurveyDataVisibility.CONTRIBUTOR_AND_ORGANIZERS
+      ),
     })
   );
 }
@@ -107,14 +138,14 @@ export function surveyToDocument(
  * Returns the proto representation of a Job model object.
  */
 export function jobToDocument(job: Job): DocumentData {
-  const {id, index, name, color, tasks} = job;
+  const { id, index, name, color, tasks } = job;
 
   return toDocumentData(
     new Pb.Job({
       id,
       index,
       name,
-      style: new Pb.Style({color}),
+      style: new Pb.Style({ color }),
       tasks: (tasks?.toList() ?? List())
         .map((task: Task) => toTaskMessage(task))
         .toArray(),

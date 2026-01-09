@@ -5,6 +5,7 @@
 !.eslintrc.json
 !.prettierrc.js
 !.github/
+!.well-known/
 **/isolate
 **/keys/
 **/dist/
@@ -22,3 +23,7 @@ web/coverage/
 # Firebase Emulator local snapshots
 data/local
 data/test
+
+
+.nx/cache
+.nx/workspace-data

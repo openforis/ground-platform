@@ -16,14 +16,14 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import {List, Map} from 'immutable';
+import { List, Map } from 'immutable';
 
-import {Coordinate} from 'app/models/geometry/coordinate';
-import {Geometry, GeometryType} from 'app/models/geometry/geometry';
-import {LinearRing} from 'app/models/geometry/linear-ring';
-import {MultiPolygon} from 'app/models/geometry/multi-polygon';
-import {Point} from 'app/models/geometry/point';
-import {Polygon} from 'app/models/geometry/polygon';
+import { Coordinate } from 'app/models/geometry/coordinate';
+import { Geometry, GeometryType } from 'app/models/geometry/geometry';
+import { LinearRing } from 'app/models/geometry/linear-ring';
+import { MultiPolygon } from 'app/models/geometry/multi-polygon';
+import { Point } from 'app/models/geometry/point';
+import { Polygon } from 'app/models/geometry/polygon';
 
 /** Pretty-print objects. */
 const stringify = (o: Object) => JSON.stringify(o);
@@ -145,7 +145,6 @@ function toLinearRing(coordinateList: List<any>): LinearRing {
  *
  * `null` values are not allowed.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function indexedMapToList(map?: any): List<any> {
   if (
     !map ||

@@ -14,21 +14,22 @@
  * limitations under the License.
  */
 
-import {DocumentData} from '@angular/fire/firestore';
-import {toMessage} from '@ground/lib';
-import {GroundProtos} from '@ground/proto';
-import {Map} from 'immutable';
+import { DocumentData } from '@angular/fire/firestore';
+import { toMessage } from '@ground/lib';
 
-import {LocationOfInterest} from 'app/models/loi.model';
+import { GroundProtos } from '@ground/proto';
+import { Map } from 'immutable';
 
-import {geometryPbToModel} from './geometry-data-converter';
+import { LocationOfInterest } from 'app/models/loi.model';
+
+import { geometryPbToModel } from './geometry-data-converter';
 
 import Pb = GroundProtos.ground.v1beta1;
 
 function propertiesPbToModel(pb: {
   [k: string]: Pb.LocationOfInterest.IProperty;
 }): Map<string, string | number> {
-  const properties: {[k: string]: string | number} = {};
+  const properties: { [k: string]: string | number } = {};
   for (const k of Object.keys(pb)) {
     const v = pb[k].stringValue || pb[k].numericValue;
     if (v !== null && v !== undefined) {
@@ -45,15 +46,21 @@ export function loiDocToModel(
   const pb = toMessage(data, Pb.LocationOfInterest) as Pb.LocationOfInterest;
   if (!pb.jobId) return Error(`Missing job_id in loi ${id}`);
   if (!pb.geometry) return Error(`Missing geometry in loi ${id}`);
-  const geometry = geometryPbToModel(pb.geometry);
-  if (!geometry) return new Error(`Invalid geometry in loi ${id}`);
-  const properties = propertiesPbToModel(pb.properties || {});
-  return new LocationOfInterest(
-    id,
-    pb.jobId,
-    geometry,
-    properties,
-    pb.customTag,
-    pb.source === Pb.LocationOfInterest.Source.IMPORTED
-  );
+  try {
+    const geometry = geometryPbToModel(pb.geometry);
+    if (!geometry) return Error(`Invalid geometry in loi ${id}`);
+    const properties = propertiesPbToModel(pb.properties || {});
+    return new LocationOfInterest(
+      id,
+      pb.jobId,
+      geometry,
+      properties,
+      pb.customTag,
+      pb.source === Pb.LocationOfInterest.Source.IMPORTED
+    );
+  } catch (e) {
+    return Error(`Error converting LOI with ID ${id}`, {
+      cause: e,
+    });
+  }
 }

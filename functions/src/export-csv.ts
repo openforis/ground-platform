@@ -16,16 +16,17 @@
 
 import * as functions from 'firebase-functions';
 import * as csv from '@fast-csv/format';
-import {canExport, canImport} from './common/auth';
-import {geojsonToWKT} from '@terraformer/wkt';
-import {getDatastore} from './common/context';
+import { canExport, hasOrganizerRole } from './common/auth';
+import { isAccessibleLoi } from './common/utils';
+import { geojsonToWKT } from '@terraformer/wkt';
+import { getDatastore } from './common/context';
 import * as HttpStatus from 'http-status-codes';
-import {DecodedIdToken} from 'firebase-admin/auth';
-import {List} from 'immutable';
-import {QuerySnapshot} from 'firebase-admin/firestore';
-import {timestampToInt, toMessage} from '@ground/lib';
-import {GroundProtos} from '@ground/proto';
-import {toGeoJsonGeometry} from '@ground/lib';
+import { DecodedIdToken } from 'firebase-admin/auth';
+import { List } from 'immutable';
+import { QuerySnapshot } from 'firebase-admin/firestore';
+import { timestampToInt, toMessage } from '@ground/lib';
+import { GroundProtos } from '@ground/proto';
+import { toGeoJsonGeometry } from '@ground/lib';
 
 import Pb = GroundProtos.ground.v1beta1;
 
@@ -39,9 +40,10 @@ export async function exportCsvHandler(
   user: DecodedIdToken
 ) {
   const db = getDatastore();
-  const {uid: userId} = user;
+  const { uid: userId } = user;
   const surveyId = req.query.survey as string;
   const jobId = req.query.job as string;
+
   const surveyDoc = await db.fetchSurvey(surveyId);
   if (!surveyDoc.exists) {
     res.status(HttpStatus.NOT_FOUND).send('Survey not found');
@@ -51,7 +53,13 @@ export async function exportCsvHandler(
     res.status(HttpStatus.FORBIDDEN).send('Permission denied');
     return;
   }
-  const ownerId = canImport(user, surveyDoc) ? undefined : userId;
+  const survey = toMessage(surveyDoc.data()!, Pb.Survey);
+  if (survey instanceof Error) {
+    res
+      .status(HttpStatus.INTERNAL_SERVER_ERROR)
+      .send('Unsupported or corrupt survey');
+    return;
+  }
 
   const jobDoc = await db.fetchJob(surveyId, jobId);
   if (!jobDoc.exists || !jobDoc.data()) {
@@ -65,10 +73,19 @@ export async function exportCsvHandler(
       .send('Unsupported or corrupt job');
     return;
   }
-  const {name: jobName} = job;
+  const { name: jobName } = job;
+
+  const isOrganizer = hasOrganizerRole(user, surveyDoc);
+
+  const canViewAll =
+    isOrganizer ||
+    survey.dataVisibility === Pb.Survey.DataVisibility.ALL_SURVEY_PARTICIPANTS;
+
+  const ownerIdFilter = canViewAll ? null : userId;
+
   const tasks = job.tasks.sort((a, b) => a.index! - b.index!);
   const snapshot = await db.fetchLocationsOfInterest(surveyId, jobId);
-  const loiProperties = createProperySetFromSnapshot(snapshot);
+  const loiProperties = createProperySetFromSnapshot(snapshot, ownerIdFilter);
   const headers = getHeaders(tasks, loiProperties);
 
   res.type('text/csv');
@@ -86,14 +103,19 @@ export async function exportCsvHandler(
   });
   csvStream.pipe(res);
 
-  const rows = await db.fetchLoisSubmissions(surveyId, jobId, ownerId, 50);
+  const rows = await db.fetchLoisSubmissions(
+    surveyId,
+    jobId,
+    ownerIdFilter,
+    50
+  );
 
   for await (const row of rows) {
     try {
       const [loiDoc, submissionDoc] = row;
       const loi = toMessage(loiDoc.data(), Pb.LocationOfInterest);
       if (loi instanceof Error) throw loi;
-      if (isAccessibleLoi(loi, ownerId) && submissionDoc) {
+      if (isAccessibleLoi(loi, ownerIdFilter) && submissionDoc) {
         const submission = toMessage(submissionDoc.data(), Pb.Submission);
         if (submission instanceof Error) throw submission;
         writeRow(csvStream, loiProperties, tasks, loi, submission);
@@ -142,11 +164,11 @@ function writeRow(
   // Header: One column for each loi property (merged over all properties across all LOIs)
   getPropertiesByName(loi, loiProperties).forEach(v => row.push(quote(v)));
   if (submission) {
-    const {taskData: data} = submission;
+    const { taskData: data } = submission;
     // Header: One column for each task
     tasks.forEach(task => row.push(quote(getValue(task, data))));
     // Header: contributor_username, contributor_email, created_client_timestamp, created_server_timestamp
-    const {created} = submission;
+    const { created } = submission;
     row.push(quote(created?.displayName));
     row.push(quote(created?.emailAddress));
     row.push(
@@ -174,14 +196,6 @@ function quote(value: any): string {
 
 function toWkt(geometry: Pb.IGeometry): string {
   return geojsonToWKT(toGeoJsonGeometry(geometry));
-}
-
-/**
- * Checks if a Location of Interest (LOI) is accessible to a given user.
- */
-function isAccessibleLoi(loi: Pb.ILocationOfInterest, ownerId?: string) {
-  const isFieldData = loi.source === Pb.LocationOfInterest.Source.FIELD_DATA;
-  return ownerId ? isFieldData && loi.ownerId === ownerId : true;
 }
 
 /**
@@ -279,7 +293,7 @@ function getFileName(jobName: string | null) {
 
 function createProperySetFromSnapshot(
   snapshot: QuerySnapshot,
-  ownerId?: string
+  ownerId: string | null
 ): Set<string> {
   const allKeys = new Set<string>();
   snapshot.forEach(doc => {

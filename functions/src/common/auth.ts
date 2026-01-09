@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-import {DecodedIdToken, getAuth} from 'firebase-admin/auth';
-import {DocumentSnapshot} from 'firebase-admin/firestore';
-import {https, Response} from 'firebase-functions/v1';
-import {EmulatorIdToken} from '../handlers';
-import {GroundProtos} from '@ground/proto';
-import {registry} from '@ground/lib';
+import { DecodedIdToken, getAuth } from 'firebase-admin/auth';
+import { DocumentSnapshot } from 'firebase-admin/firestore';
+import { Response, https } from 'firebase-functions/v1';
+import { EmulatorIdToken } from '../handlers';
+import { GroundProtos } from '@ground/proto';
+import { registry } from '@ground/lib';
 
 import Pb = GroundProtos.ground.v1beta1;
 const s = registry.getFieldIds(Pb.Survey);
@@ -28,6 +28,7 @@ const s = registry.getFieldIds(Pb.Survey);
 // https://firebase.google.com/docs/hosting/manage-cache#using_cookies
 export const SESSION_COOKIE_NAME = '__session';
 export const SURVEY_ORGANIZER_ROLE = Pb.Role.SURVEY_ORGANIZER;
+export const DATA_COLLECTOR_ROLE = Pb.Role.DATA_COLLECTOR;
 
 /**
  * Returns the encoded auth token from the "Authorization: Bearer" HTTP header
@@ -70,7 +71,7 @@ export async function setSessionCookie(
 ): Promise<void> {
   const token = getAuthBearer(req);
   const expiresIn = 60 * 60 * 24 * 5 * 1000; // 5 days
-  const cookie = await getAuth().createSessionCookie(token!, {expiresIn});
+  const cookie = await getAuth().createSessionCookie(token!, { expiresIn });
   res.cookie(SESSION_COOKIE_NAME, cookie, {
     maxAge: expiresIn,
     httpOnly: true,
@@ -93,10 +94,25 @@ function getRole(
   return acl && user.email ? acl[user.email] : null;
 }
 
+export function hasOrganizerRole(
+  user: DecodedIdToken,
+  survey: DocumentSnapshot
+): boolean {
+  const role = getRole(user, survey);
+  return !!role && [Pb.Role.SURVEY_ORGANIZER].includes(role);
+}
+
 export function canExport(
   user: DecodedIdToken,
   survey: DocumentSnapshot
 ): boolean {
+  const generalAccess = survey.get(s.generalAccess);
+  if (
+    [Pb.Survey.GeneralAccess.PUBLIC, Pb.Survey.GeneralAccess.UNLISTED].includes(
+      generalAccess
+    )
+  )
+    return true;
   return !!getRole(user, survey);
 }
 
@@ -104,6 +120,5 @@ export function canImport(
   user: DecodedIdToken,
   survey: DocumentSnapshot
 ): boolean {
-  const role = getRole(user, survey);
-  return !!role && [Pb.Role.SURVEY_ORGANIZER].includes(role);
+  return hasOrganizerRole(user, survey);
 }

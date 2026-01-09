@@ -15,13 +15,13 @@
  */
 
 import * as functions from 'firebase-functions';
-import {firestore} from 'firebase-admin';
-import {DocumentData, GeoPoint} from 'firebase-admin/firestore';
-import {registry} from '@ground/lib';
-import {GroundProtos} from '@ground/proto';
+import { firestore } from 'firebase-admin';
+import { DocumentData, FieldPath, GeoPoint } from 'firebase-admin/firestore';
+import { registry } from '@ground/lib';
+import { GroundProtos } from '@ground/proto';
 
 import Pb = GroundProtos.ground.v1beta1;
-import {leftOuterJoinSorted, QueryIterator} from './query-iterator';
+import { QueryIterator, leftOuterJoinSorted } from './query-iterator';
 
 const l = registry.getFieldIds(Pb.LocationOfInterest);
 const sb = registry.getFieldIds(Pb.Submission);
@@ -104,7 +104,7 @@ export class Datastore {
 
   constructor(db: firestore.Firestore) {
     this.db_ = db;
-    db.settings({ignoreUndefinedProperties: true});
+    db.settings({ ignoreUndefinedProperties: true });
   }
 
   /**
@@ -112,14 +112,14 @@ export class Datastore {
    * These attributes are merged with other existing ones if already present.
    */
   async mergeUserProfile(user: functions.auth.UserRecord) {
-    const {uid, email, displayName, photoURL} = user;
+    const { uid, email, displayName, photoURL } = user;
     await this.db_.doc(`users/${uid}`).set(
       {
         email,
         displayName,
         photoURL: photoURL && Datastore.trimPhotoURLSizeSuffix(photoURL),
       },
-      {merge: true}
+      { merge: true }
     );
   }
 
@@ -179,35 +179,32 @@ export class Datastore {
    * @param surveyId The ID of the survey.
    * @param jobId The ID of the job.
    * @param ownerId The optional ID of the owner to filter submissions by.
-   * @param page The page number for pagination (used with the `QueryIterator`).
+   * @param pageSize The number of documents to fetch per page for efficient pagination using the `QueryIterator`, especially useful for large datasets.
    * @returns A Promise that resolves to an array of joined LOI and submission documents.
    */
   async fetchLoisSubmissions(
     surveyId: string,
     jobId: string,
-    ownerId: string | undefined,
-    page: number
+    ownerId: string | null,
+    pageSize: number
   ) {
     const loisQuery = this.db_
       .collection(lois(surveyId))
       .where(l.jobId, '==', jobId)
-      .orderBy(l.id);
+      .orderBy(FieldPath.documentId());
     let submissionsQuery = this.db_
       .collection(submissions(surveyId))
       .where(sb.jobId, '==', jobId)
-      .orderBy(sb.loiId);
+      .orderBy(sb.loiId)
+      .orderBy(FieldPath.documentId());
     if (ownerId) {
       submissionsQuery = submissionsQuery.where(sb.ownerId, '==', ownerId);
     }
-    const loisIterator = new QueryIterator(loisQuery, page, l.id);
-    const submissionsIterator = new QueryIterator(
-      submissionsQuery,
-      page,
-      sb.loiId
-    );
+    const loisIterator = new QueryIterator(loisQuery, pageSize);
+    const submissionsIterator = new QueryIterator(submissionsQuery, pageSize);
     return leftOuterJoinSorted(
       loisIterator,
-      loiDoc => loiDoc.get(l.id),
+      loiDoc => loiDoc.id,
       submissionsIterator,
       submissionDoc => submissionDoc.get(sb.loiId)
     );
@@ -229,7 +226,7 @@ export class Datastore {
 
   async updateSubmissionCount(surveyId: string, loiId: string, count: number) {
     const loiRef = this.db_.doc(loi(surveyId, loiId));
-    await loiRef.update({[l.submissionCount]: count});
+    await loiRef.update({ [l.submissionCount]: count });
   }
 
   async updateLoiProperties(
@@ -238,7 +235,7 @@ export class Datastore {
     loiDoc: DocumentData
   ) {
     const loiRef = this.db_.doc(loi(surveyId, loiId));
-    await loiRef.update({[l.properties]: loiDoc[l.properties]});
+    await loiRef.update({ [l.properties]: loiDoc[l.properties] });
   }
 
   static toFirestoreMap(geometry: any) {

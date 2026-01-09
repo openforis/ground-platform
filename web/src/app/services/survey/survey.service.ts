@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-import {Injectable} from '@angular/core';
-import {List, Map} from 'immutable';
-import {Observable, ReplaySubject, firstValueFrom, of} from 'rxjs';
-import {shareReplay, switchMap} from 'rxjs/operators';
+import { Injectable } from '@angular/core';
+import { List, Map } from 'immutable';
+import { Observable, ReplaySubject, firstValueFrom, of } from 'rxjs';
+import { shareReplay, switchMap } from 'rxjs/operators';
 
-import {Role} from 'app/models/role.model';
-import {DataSharingType, Survey, SurveyState} from 'app/models/survey.model';
-import {AuthService} from 'app/services/auth/auth.service';
-import {DataStoreService} from 'app/services/data-store/data-store.service';
-import {NavigationService} from 'app/services/navigation/navigation.service';
+import { Role } from 'app/models/role.model';
+import { DataSharingType, Survey, SurveyState } from 'app/models/survey.model';
+import { AuthService } from 'app/services/auth/auth.service';
+import { DataStoreService } from 'app/services/data-store/data-store.service';
+import { SURVEY_ID_NEW } from 'app/services/navigation/navigation.constants';
 
 @Injectable({
   providedIn: 'root',
@@ -45,7 +45,7 @@ export class SurveyService {
           // Asynchronously load survey. switchMap() internally disposes
           // of previous subscription if present.
           switchMap(id => {
-            if (id === NavigationService.SURVEY_ID_NEW) {
+            if (id === SURVEY_ID_NEW) {
               return of(Survey.UNSAVED_NEW);
             }
             return this.dataStore.loadSurvey$(id);
@@ -71,12 +71,16 @@ export class SurveyService {
     return this.activeSurvey$;
   }
 
+  loadSurvey$(id: string): Observable<Survey> {
+    return this.dataStore.loadSurvey$(id);
+  }
+
   getAccessibleSurveys$(): Observable<List<Survey>> {
     const user = this.authService.getCurrentUser();
     if (!user) {
       return new Observable<List<Survey>>();
     }
-    const userEmail = user.email;
+    const { email: userEmail } = user;
     return this.dataStore.loadAccessibleSurveys$(userEmail);
   }
 
@@ -116,7 +120,10 @@ export class SurveyService {
    * @param state the new status of the survey.
    */
   updateState(state: SurveyState): Promise<void> {
-    return this.dataStore.updateSurvey({...this.activeSurvey, state} as Survey);
+    return this.dataStore.updateSurvey({
+      ...this.activeSurvey,
+      state,
+    } as Survey);
   }
 
   /**
@@ -126,7 +133,7 @@ export class SurveyService {
    * @param acl the new access control list of the survey.
    */
   updateAcl(acl: Map<string, Role>): Promise<void> {
-    return this.dataStore.updateSurvey({...this.activeSurvey, acl} as Survey);
+    return this.dataStore.updateSurvey({ ...this.activeSurvey, acl } as Survey);
   }
 
   /**
@@ -141,8 +148,12 @@ export class SurveyService {
   ): Promise<void> {
     return this.dataStore.updateSurvey({
       ...this.activeSurvey,
-      dataSharingTerms: {type, ...(customText && {customText})},
+      dataSharingTerms: { type, ...(customText && { customText }) },
     } as Survey);
+  }
+
+  async copySurvey(surveyId: string): Promise<string> {
+    return this.dataStore.copySurvey(surveyId);
   }
 
   async createSurvey(name: string, description?: string): Promise<string> {
@@ -158,10 +169,15 @@ export class SurveyService {
   /**
    * Deletes the survey and its subcollections.
    *
-   * @param surveyId the id of the survey.
+   * @param survey the survey instance.
    */
-  deleteSurvey(survey: Survey): Promise<void> {
-    return this.dataStore.deleteSurvey(survey);
+  async deleteSurvey(survey: Survey): Promise<void> {
+    try {
+      await this.dataStore.deleteSurvey(survey);
+    } catch (error) {
+      console.error(`Error deleting survey: ${survey.id}`, error);
+      throw error;
+    }
   }
 
   /**
