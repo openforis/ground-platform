@@ -35,7 +35,7 @@ export const environment: Environment = {
   production: true,
   googleMapsApiKey: firebaseConfig.apiKey,
   firebase: firebaseConfig,
-  cloudFunctionsUrl: `https://${firebaseConfig.projectId}.web.app`,
+  cloudFunctionsUrl: '',
   useEmulators: false,
   env: Env.Prod,
 };
