@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { NO_ERRORS_SCHEMA, WritableSignal, signal } from '@angular/core';
+import { NO_ERRORS_SCHEMA, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { MatDividerModule } from '@angular/material/divider';
@@ -44,8 +44,6 @@ import {
 
 describe('EditSurveyComponent', () => {
   let fixture: ComponentFixture<EditSurveyComponent>;
-  let surveyId$: Subject<string | null>;
-  let surveyIdSignal: WritableSignal<string | null>;
   let navigationServiceSpy: jasmine.SpyObj<NavigationService>;
   let activeSurvey$: Subject<Survey>;
   let surveyServiceSpy: jasmine.SpyObj<SurveyService>;
@@ -94,32 +92,29 @@ describe('EditSurveyComponent', () => {
   );
 
   beforeEach(async () => {
-    surveyIdSignal = signal<string | null>(null);
-    surveyId$ = new Subject<string | null>();
-
     navigationServiceSpy = jasmine.createSpyObj<NavigationService>(
       'NavigationService',
       [
         'isShareSurveyPage',
         'getEditSurveyPageSignal',
-        'getSurveyId$',
-        'getSurveyId',
         'navigateToEditJob',
         'navigateToEditSurvey',
+        'selectSurvey',
       ]
     );
-    navigationServiceSpy.getSurveyId$.and.returnValue(surveyId$);
-    navigationServiceSpy.getSurveyId.and.returnValue(surveyIdSignal);
     navigationServiceSpy.getEditSurveyPageSignal.and.returnValue(signal(''));
 
     surveyServiceSpy = jasmine.createSpyObj<SurveyService>('SurveyService', [
-      'activateSurvey',
-      'getActiveSurvey$',
+      'canManageSurvey',
+      'loadSurvey$',
     ]);
+    surveyServiceSpy.loadSurvey$.and.returnValue(of(survey));
+    surveyServiceSpy.canManageSurvey.and.returnValue(true);
+
     activeSurvey$ = new Subject<Survey>();
-    surveyServiceSpy.getActiveSurvey$.and.returnValue(activeSurvey$);
 
     surveySubject$ = new BehaviorSubject<Survey>(survey);
+
     draftSurveyServiceSpy = jasmine.createSpyObj<DraftSurveyService>(
       'DraftSurveyService',
       ['init', 'getSurvey$', 'addOrUpdateJob', 'deleteJob', 'getSurvey']
@@ -189,8 +184,7 @@ describe('EditSurveyComponent', () => {
 
   describe('when routed in with survey ID', () => {
     beforeEach(async () => {
-      surveyIdSignal.set(surveyId);
-      surveyId$.next(surveyId);
+      fixture.componentRef.setInput('surveyId', surveyId);
 
       const sortedJobs = survey.getJobsSorted();
       spyOn(survey, 'getJobsSorted').and.returnValue(sortedJobs);
@@ -203,17 +197,14 @@ describe('EditSurveyComponent', () => {
       fixture.detectChanges(); // Update view (content)
     });
 
-    it('activates survey ID', () => {
-      expect(surveyServiceSpy.activateSurvey).toHaveBeenCalledOnceWith(
-        surveyId
-      );
+    it('initializes draft survey', () => {
+      expect(draftSurveyServiceSpy.init).toHaveBeenCalledWith(surveyId);
     });
   });
 
   describe('when survey activated', () => {
     beforeEach(async () => {
-      surveyIdSignal.set(surveyId);
-      surveyId$.next(surveyId);
+      fixture.componentRef.setInput('surveyId', surveyId);
       activeSurvey$.next(survey);
 
       const sortedJobs = survey.getJobsSorted();

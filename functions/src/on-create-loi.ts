@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-import { EventContext } from 'firebase-functions';
-import { QueryDocumentSnapshot } from 'firebase-functions/v1/firestore';
+import {
+  FirestoreEvent,
+  QueryDocumentSnapshot,
+} from 'firebase-functions/v2/firestore';
 import { getDatastore } from './common/context';
 import { Datastore } from './common/datastore';
 import { broadcastSurveyUpdate } from './common/broadcast-survey-update';
@@ -26,11 +28,11 @@ import { toLoiPbProperties } from './import-geojson';
 
 import Pb = GroundProtos.ground.v1beta1;
 
-type Properties = { [key: string]: string | number };
+type Properties = Record<string, string | number>;
 
-type Headers = { [key: string]: string };
+type Headers = Record<string, string>;
 
-type Body = { [key: string]: any };
+type Body = Record<string, unknown>;
 
 type PropertyGenerator = {
   headers?: Headers;
@@ -50,12 +52,11 @@ const defaultHeaders = { 'Content-Type': 'application/json' };
  * @param context The EventContext object provided by the Cloud Functions framework.
  */
 export async function onCreateLoiHandler(
-  snapshot: QueryDocumentSnapshot,
-  context: EventContext
+  event: FirestoreEvent<QueryDocumentSnapshot | undefined>
 ) {
-  const surveyId = context.params.surveyId;
-  const loiId = context.params.loiId;
-  const data = snapshot.data();
+  const surveyId = event.params.surveyId;
+  const loiId = event.params.loiId;
+  const data = event.data?.data();
 
   if (!loiId || !data) return;
 
@@ -99,7 +100,7 @@ export async function onCreateLoiHandler(
     )
   );
 
-  await broadcastSurveyUpdate(context.params.surveyId);
+  await broadcastSurveyUpdate(event.params.surveyId);
 }
 
 async function updateProperties(

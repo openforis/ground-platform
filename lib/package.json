@@ -3,10 +3,39 @@
   "nx": {
     "name": "lib",
     "targets": {
+      "build": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "tsc"
+        }
+      },
+      "clean": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "rm -rf dist *.log src/generated"
+        }
+      },
+      "lint": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "eslint src"
+        }
+      },
       "test": {
-        "commands": "jasmine --config=jasmine.json",
-        "configurations": {
-          "ci": {}
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "jasmine --config=jasmine.json"
+        }
+      },
+      "format:check": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "prettier --check \"src/**/*.ts\""
         }
       }
     }
@@ -21,33 +50,24 @@
   "files": [
     "dist"
   ],
-  "scripts": {
-    "clean": "rm -rf dist *.log src/generated",
-    "lint": "eslint src/",
-    "test": "jasmine --config=jasmine.json",
-    "build-local-deps": "npm run build --workspace=../proto",
-    "build": "tsc",
-    "build-all": "npm run build-local-deps && npm run build",
-    "build-and-test": "npm run build && npm run test",
-    "build-all-and-test": "npm run build-all && npm run test"
-  },
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "private": true,
   "dependencies": {
-    "@google-cloud/firestore": "^7.7.0",
-    "@ground/proto": "*",
-    "firebase-functions": "^5.1.1",
-    "immutable": "^4.3.6",
-    "long": "^5.2.3",
-    "protobufjs": "^7.3.0"
+    "@google-cloud/firestore": "catalog:",
+    "@ground/proto": "workspace:*",
+    "firebase-admin": "catalog:",
+    "firebase-functions": "catalog:",
+    "protobufjs": "catalog:"
   },
   "devDependencies": {
-    "@types/geojson": "^7946.0.14",
-    "@types/jasmine": "^4.3.5",
-    "@types/source-map-support": "^0.5.10",
-    "picocolors": "^1.1.1",
-    "source-map-support": "^0.5.21"
+    "@types/geojson": "catalog:dev",
+    "@types/jasmine": "catalog:dev",
+    "@types/source-map-support": "catalog:dev",
+    "diff": "catalog:dev",
+    "mock-cloud-firestore": "catalog:dev",
+    "picocolors": "catalog:dev",
+    "source-map-support": "catalog:dev"
   }
 }

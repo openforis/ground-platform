@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-import { Component, inject, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
+import { List } from 'immutable';
 
+import { LocationOfInterest } from 'app/models/loi.model';
 import { Survey } from 'app/models/survey.model';
 import { NavigationService } from 'app/services/navigation/navigation.service';
 import { SideNavMode } from 'app/services/navigation/url-params';
@@ -28,12 +30,20 @@ import { SideNavMode } from 'app/services/navigation/url-params';
 })
 export class SecondarySidePanelComponent {
   private navigationService = inject(NavigationService);
+
   activeSurvey = input<Survey>();
+  lois = input<List<LocationOfInterest>>();
+
   loiIdSignal = this.navigationService.getLoiId();
   submissionIdSignal = this.navigationService.getSubmissionId();
   sideNavModeSignal = this.navigationService.getSideNavMode();
 
   SideNavMode = SideNavMode;
+
+  readonly selectedLoi = computed(() => {
+    const id = this.loiIdSignal();
+    return this.lois()?.find(l => l.id === id);
+  });
 
   constructor() {}
 }

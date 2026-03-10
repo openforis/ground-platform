@@ -15,14 +15,20 @@
  */
 
 import { NO_ERRORS_SCHEMA } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import {
+  ComponentFixture,
+  TestBed,
+  fakeAsync,
+  tick,
+} from '@angular/core/testing';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatListModule } from '@angular/material/list';
 import { List, Map } from 'immutable';
 import { of } from 'rxjs';
 
-import { Geometry } from 'app/models/geometry/geometry';
+import { Coordinate } from 'app/models/geometry/coordinate';
+import { Point } from 'app/models/geometry/point';
 import { Job } from 'app/models/job.model';
 import { LocationOfInterest } from 'app/models/loi.model';
 import { Submission } from 'app/models/submission/submission.model';
@@ -55,18 +61,14 @@ describe('LocationOfInterestPanelComponent', () => {
   const mockLoi = new LocationOfInterest(
     'loi1',
     'job1',
-    { chainId: 'point1' } as unknown as Geometry,
+    new Point(new Coordinate(0, 0)),
     Map()
   );
 
   beforeEach(async () => {
     loiServiceSpy = jasmine.createSpyObj<LocationOfInterestService>(
       'LocationOfInterestService',
-      [
-        'getLocationsOfInterest$',
-        'selectLocationOfInterest',
-        'getSelectedLocationOfInterest$',
-      ]
+      ['getLocationsOfInterest$']
     );
     submissionServiceSpy = jasmine.createSpyObj<SubmissionService>(
       'SubmissionService',
@@ -84,7 +86,7 @@ describe('LocationOfInterestPanelComponent', () => {
     dialogSpy = jasmine.createSpyObj<MatDialog>('MatDialog', ['open']);
 
     loiServiceSpy.getLocationsOfInterest$.and.returnValue(of(List([mockLoi])));
-    loiServiceSpy.getSelectedLocationOfInterest$.and.returnValue(of(mockLoi));
+
     submissionServiceSpy.getSubmissions$.and.returnValue(
       of(List<Submission>([]))
     );
@@ -114,16 +116,34 @@ describe('LocationOfInterestPanelComponent', () => {
   beforeEach(() => {
     fixture = TestBed.createComponent(LocationOfInterestPanelComponent);
     component = fixture.componentInstance;
-    fixture.componentRef.setInput('activeSurvey', mockSurvey);
-    fixture.detectChanges();
   });
+
+  function setupPanelWithLoi() {
+    fixture.componentRef.setInput('activeSurvey', mockSurvey);
+    fixture.componentRef.setInput('selectedLoi', mockLoi);
+    fixture.detectChanges();
+    tick(100);
+    fixture.detectChanges();
+  }
 
   it('should create', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should navigate to submission detail on selection', () => {
-    component.loi = mockLoi;
+  it('should initialize component state on init', fakeAsync(() => {
+    setupPanelWithLoi();
+
+    expect(component.isLoading()).toBe(false);
+    expect(component.selectedLoi()).toEqual(mockLoi);
+    expect(component.iconColor()).toBe('#000');
+    expect(component.name()).toBe('Unnamed point');
+    expect(component.submissions).toBeDefined();
+  }));
+
+  it('should navigate to submission detail on selection', fakeAsync(() => {
+    setupPanelWithLoi();
+
+    fixture.componentRef.setInput('loi', mockLoi);
     const submissionId = 'sub1';
     component.onSelectSubmission(submissionId);
 
@@ -132,7 +152,7 @@ describe('LocationOfInterestPanelComponent', () => {
       mockLoi.id,
       submissionId
     );
-  });
+  }));
 
   it('should clear LOI on close', () => {
     component.onClosePanel();

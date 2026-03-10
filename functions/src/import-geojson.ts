@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import functions from 'firebase-functions';
-import HttpStatus from 'http-status-codes';
+import { Request } from 'firebase-functions/v2/https';
+import type { Response } from 'express';
+import { StatusCodes } from 'http-status-codes';
 import { getDatastore } from './common/context';
 import Busboy from 'busboy';
 import JSONStream from 'jsonstream-ts';
@@ -29,7 +30,7 @@ import { ErrorHandler } from './handlers';
 import Pb = GroundProtos.ground.v1beta1;
 
 class BadRequestError extends Error {
-  statusCode = HttpStatus.BAD_REQUEST;
+  statusCode = StatusCodes.BAD_REQUEST;
 }
 
 /**
@@ -37,15 +38,15 @@ class BadRequestError extends Error {
  * and required 'survey' id and 'job' id to the database.
  */
 export function importGeoJsonCallback(
-  req: functions.https.Request,
-  res: functions.Response<any>,
+  req: Request,
+  res: Response,
   user: DecodedIdToken,
   done: () => void,
   error: ErrorHandler
 ) {
   if (req.method !== 'POST') {
     return error(
-      HttpStatus.METHOD_NOT_ALLOWED,
+      StatusCodes.METHOD_NOT_ALLOWED,
       `Expected method POST, got ${req.method}`
     );
   }
@@ -69,15 +70,15 @@ export function importGeoJsonCallback(
   busboy.on('file', async (_fieldname, fileStream) => {
     const { survey: surveyId, job: jobId } = params;
     if (!surveyId || !jobId) {
-      return error(HttpStatus.BAD_REQUEST, 'Missing survey and/or job ID');
+      return error(StatusCodes.BAD_REQUEST, 'Missing survey and/or job ID');
     }
     const survey = await db.fetchSurvey(surveyId);
     if (!survey.exists) {
-      return error(HttpStatus.NOT_FOUND, `Survey ${surveyId} not found`);
+      return error(StatusCodes.NOT_FOUND, `Survey ${surveyId} not found`);
     }
     if (!canImport(user, survey)) {
       return error(
-        HttpStatus.FORBIDDEN,
+        StatusCodes.FORBIDDEN,
         `User does not have permission to import into survey ${surveyId}`
       );
     }
@@ -121,7 +122,7 @@ export function importGeoJsonCallback(
       done();
     } catch (err) {
       console.debug(err);
-      error(HttpStatus.BAD_REQUEST, (err as Error).message);
+      error(StatusCodes.BAD_REQUEST, (err as Error).message);
     }
   });
 
@@ -129,7 +130,7 @@ export function importGeoJsonCallback(
     console.error('Busboy error', err);
     hasError = true;
     req.unpipe(busboy);
-    error(err.statusCode || HttpStatus.INTERNAL_SERVER_ERROR, err.message);
+    error(err.statusCode || StatusCodes.INTERNAL_SERVER_ERROR, err.message);
   });
 
   // Start processing the body data.

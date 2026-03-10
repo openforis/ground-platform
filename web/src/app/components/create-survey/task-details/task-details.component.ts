@@ -14,13 +14,18 @@
  * limitations under the License.
  */
 
-import { Component, EventEmitter, Output, ViewChild } from '@angular/core';
+import {
+  Component,
+  EventEmitter,
+  Input,
+  Output,
+  ViewChild,
+} from '@angular/core';
 import { List } from 'immutable';
-import { Subscription } from 'rxjs';
 
-import { TasksEditorComponent } from 'app/components/shared/tasks-editor/tasks-editor.component';
+import { TaskEditorComponent } from 'app/components/shared/task-editor/task-editor.component';
+import { Job } from 'app/models/job.model';
 import { Task } from 'app/models/task/task.model';
-import { TaskService } from 'app/services/task/task.service';
 
 @Component({
   selector: 'task-details',
@@ -31,19 +36,17 @@ export class TaskDetailsComponent {
   @Output() onValidationChange: EventEmitter<boolean> =
     new EventEmitter<boolean>();
 
+  @Input() job?: Job;
+
   tasks: List<Task> = List([]);
 
-  private subscription = new Subscription();
-
   @ViewChild('tasksEditor')
-  tasksEditor?: TasksEditorComponent;
+  tasksEditor?: TaskEditorComponent;
 
-  constructor(private taskService: TaskService) {
-    this.subscription.add(
-      this.taskService.getTasks$().subscribe(tasks => {
-        this.tasks = tasks;
-      })
-    );
+  constructor() {}
+
+  ngOnChanges(): void {
+    this.tasks = this.job?.getTasksSorted() || List([]);
   }
 
   getIndex(index: number) {
@@ -58,9 +61,5 @@ export class TaskDetailsComponent {
 
   onTasksChange(valid: boolean): void {
     this.onValidationChange.emit(valid);
-  }
-
-  ngOnDestroy(): void {
-    this.subscription.unsubscribe();
   }
 }

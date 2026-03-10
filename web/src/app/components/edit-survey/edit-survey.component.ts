@@ -16,7 +16,7 @@
 
 import '@angular/localize/init';
 
-import { Component, effect, inject } from '@angular/core';
+import { Component, effect, inject, input } from '@angular/core';
 import { MatDialog } from '@angular/material/dialog';
 import { List } from 'immutable';
 
@@ -29,14 +29,17 @@ import {
   SURVEY_SEGMENT,
 } from 'app/services/navigation/navigation.constants';
 import { NavigationService } from 'app/services/navigation/navigation.service';
-import { SurveyService } from 'app/services/survey/survey.service';
 import { environment } from 'environments/environment';
+import { Environment } from 'environments/environment-interface';
 
 import {
   DialogData,
   DialogType,
   JobDialogComponent,
 } from './job-dialog/job-dialog.component';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { switchMap } from 'rxjs';
+import { SurveyService } from 'app/services/survey/survey.service';
 
 @Component({
   selector: 'edit-survey',
@@ -45,31 +48,33 @@ import {
   standalone: false,
 })
 export class EditSurveyComponent {
-  private surveyService = inject(SurveyService);
   private jobService = inject(JobService);
   private draftSurveyService = inject(DraftSurveyService);
   private navigationService = inject(NavigationService);
+  private surveyService = inject(SurveyService);
   public dialog = inject(MatDialog);
 
   private editSurveyPageSignal =
     this.navigationService.getEditSurveyPageSignal();
-  private surveyIdSignal = this.navigationService.getSurveyId();
 
-  surveyId?: string;
+  surveyId = input<string>();
+  activeSurvey = toSignal(
+    toObservable(this.surveyId).pipe(
+      switchMap(id => (id ? this.surveyService.loadSurvey$(id) : []))
+    )
+  );
+
   survey?: Survey;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  production = !!(environment as any)['production'];
+  production = !!(environment as Environment)['production'];
   sectionTitle?: string = '';
   sortedJobs = List<Job>();
 
   constructor() {
     effect(async () => {
-      const surveyId = this.surveyIdSignal();
+      const id = this.surveyId();
 
-      if (surveyId) {
-        this.surveyId = surveyId;
-        this.surveyService.activateSurvey(surveyId);
-        await this.draftSurveyService.init(surveyId);
+      if (id) {
+        await this.draftSurveyService.init(id);
         this.draftSurveyService.getSurvey$().subscribe(survey => {
           this.survey = survey;
           this.sortedJobs = this.survey.getJobsSorted();
@@ -153,7 +158,7 @@ export class EditSurveyComponent {
             })
           );
 
-          this.navigationService.navigateToEditJob(this.surveyId!, job.id);
+          this.navigationService.navigateToEditJob(this.survey!.id, job.id);
           break;
         case DialogType.DeleteJob:
           {
@@ -167,7 +172,7 @@ export class EditSurveyComponent {
                 previousJob.id
               );
             } else {
-              this.navigationService.navigateToEditSurvey(this.surveyId!);
+              this.navigationService.navigateToEditSurvey(this.survey!.id);
             }
           }
           break;

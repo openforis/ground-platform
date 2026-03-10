@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-import * as functions from 'firebase-functions';
+import { Request } from 'firebase-functions/v2/https';
+import type { Response } from 'express';
 import { canExport, hasOrganizerRole } from './common/auth';
 import { getDatastore } from './common/context';
 import { isAccessibleLoi } from './common/utils';
-import * as HttpStatus from 'http-status-codes';
 import { DecodedIdToken } from 'firebase-admin/auth';
+import { StatusCodes } from 'http-status-codes';
 import { toMessage } from '@ground/lib';
 import { GroundProtos } from '@ground/proto';
 import { toGeoJsonGeometry } from '@ground/lib';
@@ -30,8 +31,8 @@ import Pb = GroundProtos.ground.v1beta1;
  * Iterates over all LOIs in a job returning a valid GeoJSON file.
  */
 export async function exportGeojsonHandler(
-  req: functions.Request,
-  res: functions.Response<any>,
+  req: Request,
+  res: Response,
   user: DecodedIdToken
 ) {
   const db = getDatastore();
@@ -41,30 +42,30 @@ export async function exportGeojsonHandler(
 
   const surveyDoc = await db.fetchSurvey(surveyId);
   if (!surveyDoc.exists) {
-    res.status(HttpStatus.NOT_FOUND).send('Survey not found');
+    res.status(StatusCodes.NOT_FOUND).send('Survey not found');
     return;
   }
   if (!canExport(user, surveyDoc)) {
-    res.status(HttpStatus.FORBIDDEN).send('Permission denied');
+    res.status(StatusCodes.FORBIDDEN).send('Permission denied');
     return;
   }
   const survey = toMessage(surveyDoc.data()!, Pb.Survey);
   if (survey instanceof Error) {
     res
-      .status(HttpStatus.INTERNAL_SERVER_ERROR)
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .send('Unsupported or corrupt survey');
     return;
   }
 
   const jobDoc = await db.fetchJob(surveyId, jobId);
   if (!jobDoc.exists || !jobDoc.data()) {
-    res.status(HttpStatus.NOT_FOUND).send('Job not found');
+    res.status(StatusCodes.NOT_FOUND).send('Job not found');
     return;
   }
   const job = toMessage(jobDoc.data()!, Pb.Job);
   if (job instanceof Error) {
     res
-      .status(HttpStatus.INTERNAL_SERVER_ERROR)
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
       .send('Unsupported or corrupt job');
     return;
   }
@@ -83,7 +84,7 @@ export async function exportGeojsonHandler(
     'Content-Disposition',
     'attachment; filename=' + getFileName(jobName)
   );
-  res.status(HttpStatus.OK);
+  res.status(StatusCodes.OK);
 
   // Write opening of FeatureCollection manually
   res.write('{\n  "type": "FeatureCollection",\n  "features": [\n');

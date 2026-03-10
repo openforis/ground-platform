@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import { Env } from 'environments/environment-enums';
 import { FirebaseOptions } from '@angular/fire/app';
+import { Env } from './environment-enums';
+import { Environment } from './environment-interface';
 
 // Replace with production values for your hosted environment.
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -30,7 +31,7 @@ export const firebaseConfig = {
 };
 
 
-export const environment = {
+export const environment: Environment = {
   production: true,
   googleMapsApiKey: firebaseConfig.apiKey,
   firebase: firebaseConfig,

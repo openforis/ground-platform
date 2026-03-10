@@ -22,7 +22,7 @@ import { AppComponent } from 'app/app.component';
 describe('AppComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [RouterTestingModule],
+      imports: [RouterTestingModule.withRoutes([])],
       declarations: [AppComponent],
     }).compileComponents();
   });

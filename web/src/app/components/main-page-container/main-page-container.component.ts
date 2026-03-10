@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { Component, effect, inject, input } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { switchMap } from 'rxjs/operators';
 
@@ -36,10 +36,5 @@ export class MainPageContainerComponent {
     )
   );
 
-  constructor() {
-    effect(() => {
-      const id = this.surveyId();
-      if (id) this.surveyService.activateSurvey(id);
-    });
-  }
+  constructor() {}
 }

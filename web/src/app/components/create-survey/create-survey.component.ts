@@ -16,9 +16,10 @@
 
 import '@angular/localize/init';
 
-import { ChangeDetectorRef, Component, OnInit, ViewChild } from '@angular/core';
+import { Component, OnInit, ViewChild } from '@angular/core';
 import { List } from 'immutable';
-import { Subscription, combineLatest, filter } from 'rxjs';
+import { Subscription, filter, of } from 'rxjs';
+import { map, switchMap } from 'rxjs/operators';
 
 import { DataSharingTermsComponent } from 'app/components/create-survey/data-sharing-terms/data-sharing-terms.component';
 import { JobDetailsComponent } from 'app/components/create-survey/job-details/job-details.component';
@@ -145,15 +146,13 @@ export class CreateSurveyComponent implements OnInit {
     private jobService: JobService,
     private taskService: TaskService,
     private navigationService: NavigationService,
-    private loiService: LocationOfInterestService,
-    private cdr: ChangeDetectorRef
+    private loiService: LocationOfInterestService
   ) {}
 
   ngOnInit(): void {
     this.subscription.add(
       this.navigationService.getSurveyId$().subscribe(async surveyId => {
         this.surveyId = surveyId ? surveyId : SURVEY_ID_NEW;
-        this.surveyService.activateSurvey(this.surveyId);
         await this.draftSurveyService.init(this.surveyId);
         this.draftSurveyService
           .getSurvey$()
@@ -161,12 +160,27 @@ export class CreateSurveyComponent implements OnInit {
       })
     );
 
+    const survey$ = this.navigationService.getSurveyId$().pipe(
+      switchMap(id => {
+        if (id === SURVEY_ID_NEW) {
+          return of(Survey.UNSAVED_NEW);
+        }
+        return id ? this.surveyService.loadSurvey$(id) : of(Survey.UNSAVED_NEW);
+      })
+    );
+
     this.subscription.add(
-      combineLatest([
-        this.surveyService.getActiveSurvey$(),
-        this.loiService.getLocationsOfInterest$(),
-      ])
+      survey$
         .pipe(
+          switchMap(survey =>
+            this.loiService
+              .getLocationsOfInterest$(survey)
+              .pipe(
+                map(
+                  lois => [survey, lois] as [Survey, List<LocationOfInterest>]
+                )
+              )
+          ),
           filter(
             ([survey]) =>
               this.surveyId === SURVEY_ID_NEW || survey.id === this.surveyId
@@ -292,7 +306,6 @@ export class CreateSurveyComponent implements OnInit {
       default:
         break;
     }
-    this.survey = this.surveyService.getActiveSurvey();
   }
 
   async continue(): Promise<void> {
@@ -326,7 +339,6 @@ export class CreateSurveyComponent implements OnInit {
       default:
         break;
     }
-    this.survey = this.surveyService.getActiveSurvey();
   }
 
   private async saveSurveyTitleAndDescription(): Promise<string | void> {
@@ -357,7 +369,7 @@ export class CreateSurveyComponent implements OnInit {
       job = this.jobService.createNewJob();
     }
     await this.jobService.addOrUpdateJob(
-      this.surveyId!,
+      this.survey!,
       job.copyWith({
         name,
         color: job.color || this.jobService.getNextColor(this.survey?.jobs),
@@ -386,7 +398,11 @@ export class CreateSurveyComponent implements OnInit {
       this.dataSharingTerms?.formGroup.controls.customText.value ?? undefined;
 
     this.draftSurveyService.updateDataSharingTerms(type, customText);
-    await this.surveyService.updateDataSharingTerms(type, customText);
+    await this.surveyService.updateDataSharingTerms(
+      this.survey!,
+      type,
+      customText
+    );
   }
 
   private async setSurveyStateToReady(): Promise<void> {

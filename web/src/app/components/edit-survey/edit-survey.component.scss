@@ -33,12 +33,13 @@
   width: 300px;
   padding: 12px;
 
-  --mdc-list-list-item-label-text-size: 14px;
-  --mdc-list-list-item-leading-label-color: #444746;
-  --mdc-list-list-item-hover-label-text-color: #444746;
-  --mdc-list-list-item-label-icon-size: 14px;
-  --mdc-list-list-item-leading-icon-color: #444746;
-  --mdc-list-list-item-hover-leading-icon-color: #444746;
+  --mat-list-list-item-label-text-size: 14px;
+  --mat-list-list-item-label-text-color: #444746;
+  --mat-list-list-item-hover-label-text-color: #444746;
+  --mat-list-list-item-leading-icon-size: 24px;
+  --mat-list-list-item-leading-icon-color: #444746;
+  --mat-list-list-item-hover-leading-icon-color: #444746;
+  --mat-list-list-item-leading-avatar-color: #444746;
 
   .is-active {
     background-color: #dcddd9;
@@ -68,9 +69,10 @@
 .card {
   padding: 16px 24px 24px;
   background-color: #F9FAF4;
-  border-radius: 18px;
+  border-radius: 16px;
   flex-grow: 1;
-  margin: 0px 24px 24px 0px;
+  margin: 0 auto;
+  max-width: 1200px;
 
   .content {
     text-align: left;
