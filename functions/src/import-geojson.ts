@@ -22,6 +22,7 @@ import Busboy from 'busboy';
 import JSONStream from 'jsonstream-ts';
 import { canImport } from './common/auth';
 import { DecodedIdToken } from 'firebase-admin/auth';
+import { DocumentData } from 'firebase-admin/firestore';
 import { GroundProtos } from '@ground/proto';
 import { isGeometryValid, toDocumentData, toGeometryPb } from '@ground/lib';
 import { Feature, GeoJsonProperties } from 'geojson';
@@ -58,9 +59,8 @@ export function importGeoJsonCallback(
   // Dictionary used to accumulate task step values, keyed by step name.
   const params: { [name: string]: string } = {};
 
-  // Accumulate Promises for insert operations, so we don't finalize the res
-  // stream before operations are complete.
-  const inserts: any[] = [];
+  // Accumulate LOI documents to be bulk-inserted once the file is fully parsed.
+  const loiDocs: DocumentData[] = [];
 
   const db = getDatastore();
 
@@ -68,41 +68,45 @@ export function importGeoJsonCallback(
 
   // This code will process each file uploaded.
   busboy.on('file', async (_fieldname, fileStream) => {
-    const { survey: surveyId, job: jobId } = params;
-    if (!surveyId || !jobId) {
-      return error(StatusCodes.BAD_REQUEST, 'Missing survey and/or job ID');
-    }
-    const survey = await db.fetchSurvey(surveyId);
-    if (!survey.exists) {
-      return error(StatusCodes.NOT_FOUND, `Survey ${surveyId} not found`);
-    }
-    if (!canImport(user, survey)) {
-      return error(
-        StatusCodes.FORBIDDEN,
-        `User does not have permission to import into survey ${surveyId}`
+    try {
+      const { survey: surveyId, job: jobId } = params;
+      if (!surveyId || !jobId) {
+        return error(StatusCodes.BAD_REQUEST, 'Missing survey and/or job ID');
+      }
+      const survey = await db.fetchSurvey(surveyId);
+      if (!survey.exists) {
+        return error(StatusCodes.NOT_FOUND, `Survey ${surveyId} not found`);
+      }
+      if (!canImport(user, survey)) {
+        return error(
+          StatusCodes.FORBIDDEN,
+          `User does not have permission to import into survey ${surveyId}`
+        );
+      }
+
+      console.debug(
+        `Importing GeoJSON into survey '${surveyId}', job '${jobId}'`
       );
+
+      const parser = JSONStream.parse(['features', true], undefined);
+
+      fileStream.pipe(
+        parser
+          .on('header', (data: any) => {
+            try {
+              onGeoJsonType(data.type);
+              if (data.crs) onGeoJsonCrs(data.crs);
+            } catch (error: any) {
+              busboy.emit('error', error);
+            }
+          })
+          .on('data', (data: any) => {
+            if (!hasError) onGeoJsonFeature(data, surveyId, jobId);
+          })
+      );
+    } catch (err) {
+      busboy.emit('error', err);
     }
-
-    console.debug(
-      `Importing GeoJSON into survey '${surveyId}', job '${jobId}'`
-    );
-
-    const parser = JSONStream.parse(['features', true], undefined);
-
-    fileStream.pipe(
-      parser
-        .on('header', (data: any) => {
-          try {
-            onGeoJsonType(data.type);
-            if (data.crs) onGeoJsonCrs(data.crs);
-          } catch (error: any) {
-            busboy.emit('error', error);
-          }
-        })
-        .on('data', (data: any) => {
-          if (!hasError) onGeoJsonFeature(data, surveyId, jobId);
-        })
-    );
   });
 
   // Handle non-file fields in the task. survey and job must appear
@@ -115,8 +119,8 @@ export function importGeoJsonCallback(
   busboy.on('finish', async () => {
     if (hasError) return;
     try {
-      await Promise.all(inserts);
-      const count = inserts.length;
+      await db.insertLocationsOfInterest(params.survey, loiDocs);
+      const count = loiDocs.length;
       console.debug(`${count} LOIs imported`);
       res.send(JSON.stringify({ count }));
       done();
@@ -203,10 +207,9 @@ export function importGeoJsonCallback(
       return;
     }
     try {
-      const loi = toDocumentData(
-        toLoiPb(geoJsonFeature as Feature, jobId, ownerId)
+      loiDocs.push(
+        toDocumentData(toLoiPb(geoJsonFeature as Feature, jobId, ownerId))
       );
-      inserts.push(db.insertLocationOfInterest(surveyId, loi));
     } catch (loiErr) {
       console.debug('Skipping LOI', loiErr);
     }

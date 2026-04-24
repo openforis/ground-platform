@@ -165,6 +165,19 @@ export class Datastore {
       .get();
   }
 
+  fetchPartialLocationsOfInterest(
+    surveyId: string,
+    jobId: string,
+    limit: number
+  ) {
+    return this.db_
+      .collection(lois(surveyId))
+      .where(l.jobId, '==', jobId)
+      .orderBy(FieldPath.documentId())
+      .select(String(l.ownerId), String(l.source), String(l.properties))
+      .limit(limit);
+  }
+
   fetchMailTemplate(templateId: string) {
     return this.fetchDoc_(mailTemplate(templateId));
   }
@@ -212,6 +225,18 @@ export class Datastore {
 
   async insertLocationOfInterest(surveyId: string, loiDoc: DocumentData) {
     await this.db_.doc(survey(surveyId)).collection('lois').add(loiDoc);
+  }
+
+  async insertLocationsOfInterest(
+    surveyId: string,
+    loiDocs: DocumentData[]
+  ): Promise<void> {
+    const bulkWriter = this.db_.bulkWriter();
+    const collectionRef = this.db_.collection(lois(surveyId));
+    for (const loiDoc of loiDocs) {
+      bulkWriter.create(collectionRef.doc(), loiDoc);
+    }
+    await bulkWriter.close();
   }
 
   async countSubmissionsForLoi(

@@ -16,7 +16,12 @@
 
 import '@angular/localize/init';
 
-import { Injectable, Injector, runInInjectionContext } from '@angular/core';
+import {
+  Injectable,
+  Injector,
+  NgZone,
+  runInInjectionContext,
+} from '@angular/core';
 import {
   Auth,
   User as FirebaseUser,
@@ -27,13 +32,13 @@ import {
 } from '@angular/fire/auth';
 import { Functions, httpsCallable } from '@angular/fire/functions';
 import { Observable, Subject, firstValueFrom, from } from 'rxjs';
-import { map, mergeWith, shareReplay, switchMap } from 'rxjs/operators';
+import { filter, map, mergeWith, shareReplay, switchMap } from 'rxjs/operators';
 
 import { AclEntry } from 'app/models/acl-entry.model';
 import { DataCollectionStrategy, Job } from 'app/models/job.model';
 import { Role } from 'app/models/role.model';
 import { Survey } from 'app/models/survey.model';
-import { User } from 'app/models/user.model';
+import { User, UserType } from 'app/models/user.model';
 import { DataStoreService } from 'app/services/data-store/data-store.service';
 import { NavigationService } from 'app/services/navigation/navigation.service';
 import { environment } from 'environments/environment';
@@ -63,6 +68,10 @@ export const ROLE_OPTIONS = [
   },
 ];
 
+const SESSION_COOKIE_EXPIRES_AT_KEY = 'sessionCookieExpiresAt';
+// Refresh the session cookie this many ms before it expires to avoid using a stale cookie.
+const SESSION_COOKIE_REFRESH_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
+
 @Injectable({
   providedIn: 'root',
 })
@@ -78,19 +87,13 @@ export class AuthService {
     private navigationService: NavigationService,
     private functions: Functions,
     private httpClientService: HttpClientService,
-    private injector: Injector
+    private injector: Injector,
+    private ngZone: NgZone
   ) {
-    // onIdTokenChanged via RxJS 'idToken' or 'user' specific helper?
-    // @angular/fire/auth provides 'user' which wraps onIdTokenChanged.
-    // However, existing code pipes it to tokenChanged$.
-    // Let's use the 'user' observable from @angular/fire/auth directly if possible, or just hook up manually.
-    // Typically `user(this.auth)` matches onIdTokenChanged.
-    // Let's explicitly use the modular onIdTokenChanged function for now to replicate exact behavior if simpler.
-    // actually, let's use the RxJS way:
-    // import { user } from '@angular/fire/auth'; --> corresponds to onIdTokenChanged.
-    // But I didn't import 'user' in the top block, I imported 'User as FirebaseUser'.
-    // Let's just use the strict SDK method in constructor.
-    this.auth.onIdTokenChanged(user => this.tokenChanged$.next(user));
+    this.auth.onIdTokenChanged(user => {
+      if (!user) localStorage.removeItem(SESSION_COOKIE_EXPIRES_AT_KEY);
+      this.tokenChanged$.next(user);
+    });
 
     this.user$ = authState(this.auth).pipe(
       mergeWith(this.tokenChanged$),
@@ -107,14 +110,22 @@ export class AuthService {
    * backend functions which require session auth. Namely, this is necessary for functions which
    * download arbitrarily large files (namely, "/exportCsv"). These functions can only be invoked via
    * HTTP GET, since browser do not allow streaming directly to disk via POST or other methods.
+   *
+   * Skips the server call if a valid session cookie was already created in this browser. The expiry
+   * timestamp is persisted in localStorage (sourced from the server response) so the check survives
+   * page refreshes. The entry is cleared when the user signs out (tracked via onIdTokenChanged).
    */
   async createSessionCookie() {
+    const stored = localStorage.getItem(SESSION_COOKIE_EXPIRES_AT_KEY);
+    if (stored !== null && Date.now() + SESSION_COOKIE_REFRESH_BUFFER_MS < parseInt(stored, 10)) {
+      return;
+    }
     try {
       // TODO(#1159): Refactor access to Cloud Functions into new service.
-      await this.httpClientService.postWithAuth(
-        `${environment.cloudFunctionsUrl}/sessionLogin`,
-        {}
-      );
+      const { expiresAt } = await this.httpClientService.postWithAuth<{
+        expiresAt: number;
+      }>(`${environment.cloudFunctionsUrl}/sessionLogin`, {});
+      localStorage.setItem(SESSION_COOKIE_EXPIRES_AT_KEY, String(expiresAt));
     } catch (err) {
       console.error(
         'Session login failed. Some features may be unavailable',
@@ -183,7 +194,10 @@ export class AuthService {
 
   async signOut() {
     await runInInjectionContext(this.injector, () => signOut(this.auth));
-    return this.navigationService.signOut();
+    await firstValueFrom(
+      this.user$.pipe(filter(user => !user.isAuthenticated))
+    );
+    this.ngZone.run(() => this.navigationService.signOut());
   }
 
   /**
@@ -209,6 +223,10 @@ export class AuthService {
       (this.isContributor(userRole) &&
         job.strategy !== DataCollectionStrategy.PREDEFINED)
     );
+  }
+
+  isAdmin(): boolean {
+    return this.currentUser?.userType === UserType.ADMIN;
   }
 
   isManager(role: Role): boolean {
